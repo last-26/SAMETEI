@@ -1,0 +1,27 @@
+{
+  "name": "sametei-hr-rag",
+  "version": "1.0.0",
+  "description": "SAMETEI HR Chatbot RAG System",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "embed": "node scripts/embed-documents.js",
+    "update": "node scripts/update-knowledge.js",
+    "test": "node scripts/test-rag.js"
+  },
+  "dependencies": {
+    "mongodb": "^6.3.0",
+    "axios": "^1.6.0",
+    "pdf-parse": "^1.1.1",
+    "mammoth": "^1.6.0",
+    "natural": "^6.10.0",
+    "tiktoken": "^1.0.10",
+    "dotenv": "^16.3.1",
+    "csv-parser": "^3.0.0",
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  },
+  "keywords": ["hr", "chatbot", "rag", "librechat"],
+  "author": "SAMETEI",
+  "license": "MIT"
+}

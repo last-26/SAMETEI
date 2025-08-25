@@ -192,6 +192,23 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     ({ icon, bg, name } = endpointIcons[iconURL]);
   }
 
+  // Special handling for OpenRouter endpoints
+  if ((endpoint === 'OpenRouter' || iconURL?.includes('openrouter') || endpoint?.toLowerCase().includes('openrouter')) && !iconURL) {
+    icon = (
+      <div className="h-6 w-6">
+        <div className="overflow-hidden rounded-full">
+          <img
+            className="shadow-stroke h-full w-full object-contain"
+            src="/assets/openrouter.png"
+            alt="OpenRouter"
+            style={{ height: size, width: size }}
+          />
+        </div>
+      </div>
+    );
+    name = 'OpenRouter';
+  }
+
   if (isAssistantsEndpoint(endpoint)) {
     return icon;
   }

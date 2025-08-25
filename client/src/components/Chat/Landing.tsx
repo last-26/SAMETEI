@@ -171,27 +171,11 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               </TooltipAnchor>
             )}
           </div>
-          {((isAgent || isAssistant) && name) || name ? (
-            <div className="flex flex-col items-center gap-0 p-2">
-              <SplitText
-                key={`split-text-${name}`}
-                text={name}
-                className={`${getTextSizeClass(name)} font-medium text-text-primary`}
-                delay={50}
-                textAlign="center"
-                animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
-                animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
-                easing={easings.easeOutCubic}
-                threshold={0}
-                rootMargin="0px"
-                onLineCountChange={handleLineCountChange}
-              />
-            </div>
-          ) : (
+          <div className="flex flex-col items-center gap-0 p-2">
             <SplitText
-              key={`split-text-${greetingText}${user?.name ? '-user' : ''}`}
-              text={greetingText}
-              className={`${getTextSizeClass(greetingText)} font-medium text-text-primary`}
+              key="split-text-sametei-hr"
+              text="SAMETEI HR Asistanı"
+              className={`${getTextSizeClass('SAMETEI HR Asistanı')} bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text font-bold text-transparent`}
               delay={50}
               textAlign="center"
               animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
@@ -201,7 +185,27 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               rootMargin="0px"
               onLineCountChange={handleLineCountChange}
             />
-          )}
+            <div className="mt-2 text-center text-sm text-text-secondary">
+              İnsan Kaynakları prosedürleri ve şirket politikalarıyla ilgili tüm sorularınızı cevaplayabilirim.
+            </div>
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              <div className="rounded-full bg-blue-100 px-3 py-1 text-xs text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                ✓ İzin Hakları
+              </div>
+              <div className="rounded-full bg-green-100 px-3 py-1 text-xs text-green-700 dark:bg-green-900 dark:text-green-300">
+                ✓ Maaş & Bordro  
+              </div>
+              <div className="rounded-full bg-purple-100 px-3 py-1 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300">
+                ✓ Çalışma Saatleri
+              </div>
+              <div className="rounded-full bg-orange-100 px-3 py-1 text-xs text-orange-700 dark:bg-orange-900 dark:text-orange-300">
+                ✓ Yan Haklar
+              </div>
+            </div>
+            <div className="mt-3 text-center text-xs text-text-secondary">
+              Örnek sorular: "Yılda kaç gün izin hakkım var?", "Maaş ne zaman yatırılır?"
+            </div>
+          </div>
         </div>
         {description && (
           <div className="animate-fadeIn mt-4 max-w-md text-center text-sm font-normal text-text-primary">

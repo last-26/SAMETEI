@@ -209,3 +209,42 @@ We thank [Locize](https://locize.com) for their translation management tools tha
     <img src="https://github.com/user-attachments/assets/d6b70894-6064-475e-bb65-92a9e23e0077" alt="Locize Logo" height="50">
   </a>
 </p>
+
+# SAMETEI – LibreChat UI tabanlı sohbet ve RAG denemeleri
+
+Bu depo, LibreChat’in modern web arayüzünü (LibreChat UI) temel alır ve sohbet deneyimini zenginleştirmek için ek servisler ve bir HR RAG (Retrieval-Augmented Generation) çalışma alanı içerir.
+
+## Kısa Özet
+- LibreChat UI, çoklu sağlayıcı desteği olan esnek bir sohbet arayüzüdür.
+- Bu projede LibreChat tabanlı arayüz üzerine, insan kaynakları dokümanlarından arama yapıp yanıtları zenginleştiren örnek bir RAG modülü (`hr-rag-system/`) denenmektedir.
+- Sunucu tarafında API ve servisler; istemci tarafında React tabanlı bir arayüz bulunmaktadır.
+
+## Kullanılan Başlıca Teknolojiler ve Araçlar
+- Uygulama ve Arayüz:
+  - React, TypeScript, Vite
+  - LibreChat UI bileşenleri ve durum yönetimi
+- Sunucu Tarafı:
+  - Node.js, Express
+  - JWT tabanlı kimlik doğrulama, dosya/konuşma yönetimi servisleri
+- RAG Çalışma Alanı (`hr-rag-system/`):
+  - Node.js tabanlı yardımcı scriptler (gömme/indeksleme ve test araçları)
+  - MongoDB (örnek yapılandırma), OpenRouter/LLM API entegrasyonları
+- Geliştirme ve Test:
+  - Jest/Playwright (örnek test ayarları), ESLint yapılandırmaları
+- DevOps ve Çalıştırma:
+  - Docker, docker-compose
+  - Helm Chart’lar ve Kubernetes dağıtım dosyaları
+
+## Nasıl Çalıştırılır (Kısa)
+1. Gerekli bağımlılıkları yükleyin:
+   - API ve istemci klasörlerinde `npm install` veya proje kökünde `npm run setup` (varsa) 
+2. Geliştirme modunda çalıştırın:
+   - API: `npm run dev` (veya proje komutlarına bakın)
+   - İstemci: `npm run dev`
+3. Docker ile çalıştırma için kökteki `docker-compose.yml` dosyasını kullanabilirsiniz.
+
+Detaylı kurulum ve özelleştirme için proje içindeki `config/`, `api/` ve `client/` klasörlerine göz atın.
+
+## Notlar
+- Ortam değişkenleri ve anahtarlar için `.env` veya ilgili örnek dosyalarını temel alarak kendi değerlerinizi oluşturun.
+- RAG örnekleri için `hr-rag-system/` klasöründeki script’leri ve README notlarını inceleyin.
