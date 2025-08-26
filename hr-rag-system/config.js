@@ -9,7 +9,7 @@ module.exports = {
 
   // OpenRouter API Ayarları
   openrouter: {
-    apiKey: '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',
+    apiKey: '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', // Yeni API anahtarını buraya yaz
     baseURL: 'https://openrouter.ai/api/v1',
     embeddingModel: 'local', // OpenRouter'da embedding yok, local kullanacağız
     chatModel: 'deepseek/deepseek-r1:free' // Güncel ücretsiz model
@@ -19,8 +19,8 @@ module.exports = {
   rag: {
     chunkSize: 500,
     chunkOverlap: 50,
-    topKResults: 3,
-    similarityThreshold: 0.7
+    topKResults: 5, // Daha fazla sonuç getir
+    similarityThreshold: 0.3 // Daha düşük threshold (daha esnek eşleştirme)
   },
 
   // Server Ayarları

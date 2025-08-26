@@ -1,0 +1,93 @@
+[33m21620154[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m docs: README özgünleştirildi; LibreChat'e kaynak bağlantısı bırakıldı
+[33mb4c599ec[m docs: Türkçe README eklendi; proje ve LibreChat UI özeti
+[33mc465d7b7[m 🪪 fix: Preserve Existing Interface Permissions When Updating Config (#9199)
+[33maba0a93d[m 🧰 fix: Available Tools Retrieval with correct MCP Caching (#9181)
+[33ma49b2b28[m 🛣️ feat: `directEndpoint` Fetch Override for Custom Endpoints (#9179)
+[33me0ebb709[m ⛔ fix: `AbortSignal` Cleanup Logic for New Chats (#9177)
+[33m9a796350[m 🌍 i18n: Add Bosnian and Norsk Bokmål Languages (#9176)
+[33mce19abc9[m 🆔 feat: Add User ID to Anthropic API Payload as Metadata (#9174)
+[33m49cd3894[m 🛠️ fix: Restrict Editable Content Types & Consolidate Typing (#9173)
+[33mda4aa374[m 🛠️ refactor: Consolidate MCP Tool Caching (#9172)
+[33m5a14ee9c[m 🌍 i18n: Update translation.json with latest translations (#9151)
+[33m3394aa50[m 🗃️ fix: Only Unlink Temp files on Error for Firebase File Uploads (#9152)
+[33mcee0579e[m 📜 chore: update `librechat.example.yaml`
+[33md6c173c9[m 🐍 fix: Use Standard Mongoose Module Resolution in Config Scripts (#9143)
+[33mbeff848a[m 🛡️ fix: Add Null Checks to Parameter Settings to Prevent Undefined Access (#9108)
+[33mb9bc3123[m 🐛 fix: Correct Next Refill Date Logic for Balance Settings (#9121)
+[33m639c7ad6[m 📬 feat: Agent Support Email Address Validation (#9128)
+[33m822e2310[m 🚮 fix: Remove Filtering Logic Before MCP Initialization (#9149)
+[33m2a0a8f6b[m 📛 refactor: Decouple MCP Dialog UI from `BadgeRowContext` (#8920)
+[33ma6fd32a1[m 🏷️ refactor: Normalize Request Headers in `setRequestHeaders` (#9106)
+[33m80a1a57f[m 🌍 i18n: Update translation.json with latest translations (#9104)
+[33m35763914[m 📦 chore: Bump Package Versions and Update Data Provider Workflow (#9103)
+[33m55557f7c[m 🌀 chore: Resolve `primeResources` Typescript Warning
+[33md7d02766[m 🏷️ feat: Request Placeholders for Custom Endpoint & MCP Headers (#9095)
+[33m627f0bff[m 🔧 chore: Update package versions for data-provider and data-schemas (#9096)
+[33m8d1d9537[m ®️ chore: Remove Unnecessary `sourcemapPathTransform` in Rollup Config
+[33m8bcdc041[m ⚙️ refactor: Only register OpenID Strategy if Config Succeeded (#9094)
+[33m9b6395d9[m 🌐 feat: Configurable Redis Cluster Mode with Single URI Support (#9039)
+[33mad1503ab[m 🧪 feat: Claude Sonnet 4 - 1M Context Window (Beta Header) (#9093)
+[33ma6d7ebf2[m 🛠️ fix: Workaround for Federated OpenID Nonce Validation Issues (#9067)
+[33mcebf140b[m 🔄 fix: Add Azure to Recognized and Content array providers for MCP Tool Calls (#9092)
+[33mcc0cf359[m 🔧 fix: Remove Unused Duplicate Group Methods (#9091)
+[33m3547873b[m 🧑‍💻 refactor: Secure Field Selection for 2FA & API Build Sourcemap (#9087)
+[33m50b7bd66[m 🔄 fix: Ensure `lastRefill` Date for Existing Users & Refactor Balance Middleware (#9086)
+[33m81186312[m 🪙 refactor: Remove Title `maxTokens` & Support New LMStudio/Ollama Reasoning Format (#9085)
+[33m4ec7bcb6[m 🪟 style: Agent Marketplace UI Responsiveness, a11y, and Navigation (#9068)
+[33mc78fd0fc[m 🔐 feat: Group schema support, refine user schema security, and improve types (#9070)
+[33md711fc78[m 🤝 refactor: Clarify labels for Sharing Permissions
+[33m6af7efd0[m 🤖 fix: Active Tab Logic for Promoted Agents in Agent Marketplace (#9069)
+[33md57e7aec[m 🥷 fix: Correct Agents Handling for Marketplace Users (#9065)
+[33me4e25aaf[m 🔎 feat: Add Prompt and Agent Permissions Migration Checks (#9063)
+[33me8ddd279[m 🎏 refactor: Streamline Role Permissions from Interface Config
+[33mb742c8c7[m 👁️‍🗨️ refactor: use `PermissionBits.VIEW` in `useAgentsMap` for `requiredPermission`
+[33m803ade86[m 🔄 refactor: Principal Type Handling in Search Principals to use Array
+[33mdcd96c29[m 🗨️ refactor: Optimize Prompt Queries
+[33m53c31b85[m 🗞️ refactor: Apply Role Permissions at Startup only if Missing or Configured
+[33md07c2b34[m 🛒 feat: Implement Marketplace Permissions Management UI
+[33ma434d285[m 🧑‍🤝‍🧑 feat: Add People Picker Permissions Management UI
+[33md82a6364[m 🖼️ style: Improve Marketplace & Sharing Dialog UI
+[33m9585db14[m 🤖 fix: Edge Case for Agent List Access Control
+[33mc191af6c[m 🎨 style: Theming in SharePointPickerDialog, PrincipalAvatar, and PeoplePickerSearchItem
+[33m39346d6b[m 🛂 feat: Role as Permission Principal Type
+[33m28d63dab[m 🔧 refactor: Integrate PrincipalModel Enum for Principal Handling
+[33m49d1cefe[m 🔧 refactor: Add and use PrincipalType Enum
+[33m0262c259[m 🌏 chore: Remove unused localization keys from translation.json
+[33m90b037a6[m 🧪 ci: Update PermissionService tests for PromptGroup resource type
+[33mfc8fd489[m 🔗 fix: File Citation Processing to Use Tool Artifacts
+[33m81b32e40[m 🔧 refactor: Organize Sharing/Agent Components and Improve Type Safety
+[33mae732b2e[m 🗨️ feat: Granular Prompt Permissions via ACL and Permission Bits
+[33m7e7e7571[m 🧹 chore: Add Back Agent-Specific File Retrieval and Deletion Permissions
+[33mff54cbff[m 🔒 feat: Implement Granular File Storage Strategies and Access Control Middleware
+[33m74e029e7[m 🧪 ci: Update Test Files & fix ESLint issues
+[33m75324e1c[m 🎨 style: Theming and Consistency Improvements for Agent Marketplace
+[33m949682ef[m 🏪 feat: Agent Marketplace
+[33m66bd419b[m 🔐 feat: Granular Role-based Permissions + Entra ID Group Discovery (#7804)
+[33maa42759f[m 🍃 feat: Add MongoDB Connection Pool Configuration Options (#8537)
+[33m52e59e40[m 📚 feat: Add Source Citations for File Search in Agents (#8652)
+[33ma955097f[m 📁 feat: Integrate SharePoint File Picker and Download Workflow (#8651)
+[33mb6413b06[m 🐞 fix: Update MCP server initialization to skip non-startup and oauth servers (#9049)
+[33me6cebdf2[m 🚌 fix: MCP Runtime Errors while Initializing (#9046)
+[33m3eb6debe[m 🌍 i18n: Update translation.json with latest translations (#9020)
+[33m8780a781[m ♻️ refactor: MCPManager for Scalability, Fix App-Level Detection, Add Lazy Connections (#8930)
+[33m9dbf1534[m 🐞 fix: Prevent Type Error in Successful Bookmark Deletion (#9014)
+[33m4799593e[m 🔧 fix: Redis cluster connection errors and configuration (#9016)
+[33ma199b874[m 🐋 ci: Optimize Dockerfile Caching (#8480)
+[33m007570b5[m[33m ([m[1;33mtag: [m[1;33mv0.8.0-rc2[m[33m)[m 🎨 style: Add missing markdown font size variable to CSS (#9011)
+[33m5943d534[m 📑 docs: Fix Typos in JSDoc and Doc Files (#8998)
+[33m052e61b7[m ✨ v0.8.0-rc2 (#9000)
+[33m1ccac584[m 🔒 fix: Provider Validation for Social, OpenID, SAML, and LDAP Logins (#8999)
+[33m04d74a7e[m 🪖 ci: Helm OCI Publishing (#7256)
+[33m0fdca8dd[m 🌍 i18n: Update translation.json with latest translations (#8996)
+[33mc5ca621e[m 🧑‍💼 feat: Add Agent Model Validation (#8995)
+[33m8cefa566[m 📸 fix: Avatar Handling for Social Login (#8993)
+[33m7e4c8a5d[m[33m ([m[1;31mupstream/8980-bug-security-issue-signing-in-with-google-account-with-same-email-as-one-already-created-with-microsoft-openid-signs-into-the-microsoft-account[m[33m)[m 🛡️ fix: OTP Verification For 2FA Disable Operation (#8975)
+[33medf33bed[m 🛂 feat: Payload limits and Validation for User-created Memories (#8974)
+[33m21e00168[m 🪙 fix: Max Output Tokens Refactor for Responses API (#8972)
+[33mda3730b7[m 🌍 i18n: Update translation.json with latest translations (#8957)
+[33m770c766d[m 🔧 refactor: Move Plugin-related Helpers to TS API and Add Tests (#8961)
+[33m5eb69264[m 🪖 chore: Fix Typo in `helm/librechat/values.yaml` (#8960)
+[33me478ae1c[m 📦 chore: Bump `@librechat/agents` to v2.4.75 (#8956)
+[33m0c9284c8[m 🧠 refactor: Memory Timeout after Completion and Guarantee Stream Final Event (#8955)
+[33m4eeadddf[m 🔮 fix: Artifacts `readOnly` to Re-render when Expected (#8954)
+[33m9ca18475

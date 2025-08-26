@@ -93,6 +93,23 @@ class MongoDBVectorDB {
   }
 
   /**
+   * Tüm dökümanları getir (keyword search için)
+   */
+  async getAllDocuments() {
+    try {
+      if (this.useInMemory) {
+        return this.inMemoryStorage;
+      }
+      
+      const documents = await this.collection.find({}).toArray();
+      return documents;
+    } catch (error) {
+      console.error('❌ Döküman getirme hatası:', error);
+      return [];
+    }
+  }
+
+  /**
    * Vector similarity search (MongoDB Atlas Vector Search)
    */
   async vectorSearch(queryEmbedding, limit = 3) {

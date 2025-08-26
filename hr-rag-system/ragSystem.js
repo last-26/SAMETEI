@@ -98,7 +98,13 @@ class HRRAGSystem {
       const queryEmbedding = await this.openrouter.createEmbedding(userQuestion);
       
       // 2. Vector search ile en yakın dökümanları bul
-      const relevantDocs = await this.vectorDB.vectorSearch(queryEmbedding, topK);
+      let relevantDocs = await this.vectorDB.vectorSearch(queryEmbedding, topK);
+      
+      // 3. Keyword matching ile ek sonuçlar bul
+      const keywordResults = await this.keywordSearch(userQuestion, topK);
+      
+      // 4. Sonuçları birleştir ve sırala
+      relevantDocs = this.mergeAndRankResults(relevantDocs, keywordResults, topK);
       
       if (relevantDocs.length === 0) {
         console.log('⚠️ Hiç ilgili döküman bulunamadı, fallback kullanılıyor');
@@ -172,6 +178,90 @@ class HRRAGSystem {
     }
     
     return results;
+  }
+
+  /**
+   * Keyword-based search ile ek sonuçlar bul
+   */
+  async keywordSearch(query, topK) {
+    try {
+      const keywords = this.extractKeywords(query.toLowerCase());
+      const allDocs = await this.vectorDB.getAllDocuments();
+      
+      const scoredDocs = allDocs.map(doc => {
+        let score = 0;
+        const docText = doc.content.toLowerCase();
+        
+        // Her keyword için puan ver
+        keywords.forEach(keyword => {
+          if (docText.includes(keyword)) {
+            score += 1;
+          }
+        });
+        
+        // Uzunluk bonusu (daha detaylı dökümanlar)
+        if (doc.content.length > 200) {
+          score += 0.5;
+        }
+        
+        return { ...doc, score };
+      });
+      
+      // Score'a göre sırala ve topK kadar döndür
+      return scoredDocs
+        .filter(doc => doc.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topK);
+        
+    } catch (error) {
+      console.error('❌ Keyword search hatası:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Query'den anahtar kelimeleri çıkar
+   */
+  extractKeywords(query) {
+    const stopwords = ['nasıl', 'nedir', 'hangi', 'kaç', 'ne', 'ile', 've', 'veya', 'ama', 'fakat', 'ancak', 'çünkü', 'eğer', 'ise', 'de', 'da', 'te', 'ta', 'mi', 'mı', 'mu', 'mü'];
+    
+    return query
+      .split(/\s+/)
+      .filter(word => word.length > 2 && !stopwords.includes(word))
+      .map(word => word.replace(/[^\wçğıöşüÇĞIİÖŞÜ]/g, ''));
+  }
+
+  /**
+   * Vector search ve keyword search sonuçlarını birleştir ve sırala
+   */
+  mergeAndRankResults(vectorResults, keywordResults, topK) {
+    const allDocs = new Map();
+    
+    // Vector search sonuçlarını ekle
+    vectorResults.forEach((doc, index) => {
+      allDocs.set(doc._id || doc.id || index, {
+        ...doc,
+        finalScore: (doc.score || 0) * 0.7 + (vectorResults.length - index) * 0.3
+      });
+    });
+    
+    // Keyword search sonuçlarını ekle
+    keywordResults.forEach((doc, index) => {
+      const existing = allDocs.get(doc._id || doc.id || `kw_${index}`);
+      if (existing) {
+        existing.finalScore = Math.max(existing.finalScore, (doc.score || 0) * 0.5);
+      } else {
+        allDocs.set(doc._id || doc.id || `kw_${index}`, {
+          ...doc,
+          finalScore: (doc.score || 0) * 0.5
+        });
+      }
+    });
+    
+    // Final score'a göre sırala ve topK kadar döndür
+    return Array.from(allDocs.values())
+      .sort((a, b) => b.finalScore - a.finalScore)
+      .slice(0, topK);
   }
 
   /**
