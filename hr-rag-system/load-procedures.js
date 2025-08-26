@@ -8,12 +8,10 @@ async function loadProcedures() {
     const ragSystem = new HRRAGSystem();
     await ragSystem.initialize();
     
-    // CSV dosyasının yolunu belirle
-    const csvPath = path.join(__dirname, '..', 'hr_procedures.csv');
-    console.log(`📁 CSV dosyası: ${csvPath}`);
-    
-    // HR prosedürlerini yükle
-    const result = await ragSystem.loadHRProcedures(csvPath);
+    // Prosedür klasörünü yükle
+    const dirPath = path.join(__dirname, 'data', 'procedures');
+    console.log(`📁 Klasör: ${dirPath}`);
+    const result = await ragSystem.loadDocumentsFromDir(dirPath);
     
     console.log(`✅ ${result.length} HR prosedürü başarıyla yüklendi!`);
     

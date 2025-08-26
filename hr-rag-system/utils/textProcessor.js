@@ -1,5 +1,8 @@
 const csv = require('csv-parser');
 const fs = require('fs');
+const path = require('path');
+const pdfParse = require('pdf-parse');
+const mammoth = require('mammoth');
 const { encoding_for_model } = require('tiktoken');
 const config = require('../config');
 
@@ -214,22 +217,43 @@ class TextProcessor {
    */
   async processDocument(filePath, metadata = {}) {
     const extension = filePath.split('.').pop().toLowerCase();
-    
+
     switch (extension) {
-      case 'csv':
+      case 'csv': {
         return await this.processCSV(filePath);
-      
-      case 'txt':
+      }
+      case 'txt': {
         const txtContent = fs.readFileSync(filePath, 'utf-8');
-        return this.chunkText(txtContent, { 
-          ...metadata, 
-          source: filePath,
+        return this.chunkText(this.cleanText(txtContent), {
+          ...metadata,
+          source: path.basename(filePath),
           type: 'text_document'
         });
-      
-      // PDF ve Word desteği için ek kütüphaneler gerekli
-      default:
+      }
+      case 'pdf': {
+        const dataBuffer = fs.readFileSync(filePath);
+        const pdfData = await pdfParse(dataBuffer);
+        const text = this.cleanText(pdfData.text || '');
+        return this.chunkText(text, {
+          ...metadata,
+          source: path.basename(filePath),
+          type: 'pdf_document',
+          pageCount: pdfData.numpages || undefined
+        });
+      }
+      case 'docx': {
+        const dataBuffer = fs.readFileSync(filePath);
+        const result = await mammoth.extractRawText({ buffer: dataBuffer });
+        const text = this.cleanText(result.value || '');
+        return this.chunkText(text, {
+          ...metadata,
+          source: path.basename(filePath),
+          type: 'docx_document'
+        });
+      }
+      default: {
         throw new Error(`Desteklenmeyen dosya formatı: ${extension}`);
+      }
     }
   }
 

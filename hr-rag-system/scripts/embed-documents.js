@@ -5,7 +5,7 @@ async function embedHRDocuments() {
   const ragSystem = new HRRAGSystem();
   
   try {
-    console.log('🚀 SAMETEI HR Dökümanları Embedding İşlemi Başlıyor...\n');
+    console.log('🚀 HR Dökümanları Embedding İşlemi Başlıyor...\n');
     
     // RAG sistemini başlat
     await ragSystem.initialize();
@@ -26,11 +26,10 @@ async function embedHRDocuments() {
       console.log('🗑️ Mevcut veriler temizlendi\n');
     }
     
-    // HR prosedürlerini yükle
-    const csvPath = path.join(__dirname, '../../hr_procedures.csv');
-    console.log(`📂 CSV Dosyası: ${csvPath}\n`);
-    
-    await ragSystem.loadHRProcedures(csvPath);
+    // Klasörden belgeleri yükle
+    const dirPath = path.join(__dirname, '..', 'data', 'procedures');
+    console.log(`📁 Klasör: ${dirPath}\n`);
+    await ragSystem.loadDocumentsFromDir(dirPath);
     
     // Sistem istatistikleri
     console.log('\n📊 Sistem İstatistikleri:');

@@ -78,6 +78,83 @@ class HRRAGSystem {
   }
 
   /**
+   * Bir klasörden desteklenen tüm belgeleri içe aktar ve embed et
+   */
+  async loadDocumentsFromDir(dirPath) {
+    try {
+      if (!this.isInitialized) {
+        await this.initialize();
+      }
+
+      const fs = require('fs');
+      const path = require('path');
+      const absoluteDir = path.resolve(dirPath);
+      console.log(`📁 Klasörden içe aktarma: ${absoluteDir}`);
+
+      if (!fs.existsSync(absoluteDir)) {
+        throw new Error(`Klasör bulunamadı: ${absoluteDir}`);
+      }
+
+      const supported = ['.pdf', '.docx', '.txt', '.csv'];
+      const files = fs.readdirSync(absoluteDir)
+        .filter(f => supported.includes(path.extname(f).toLowerCase()))
+        .map(f => path.join(absoluteDir, f));
+
+      if (files.length === 0) {
+        console.log('⚠️ Klasörde desteklenen dosya bulunamadı');
+        return [];
+      }
+
+      console.log(`📝 ${files.length} dosya bulundu, işleniyor...`);
+
+      // Dosyaları sırayla işle (API limitleri için güvenli)
+      const allChunks = [];
+      for (const file of files) {
+        try {
+          const chunks = await this.textProcessor.processDocument(file, { source: 'procedures' });
+          chunks.forEach((c, idx) => {
+            c.metadata = {
+              ...c.metadata,
+              sourceFile: path.basename(file)
+            };
+          });
+          allChunks.push(...chunks);
+          console.log(`✅ İşlendi: ${path.basename(file)} -> ${chunks.length} chunk`);
+        } catch (e) {
+          console.error(`❌ Dosya işlenemedi: ${file} - ${e.message}`);
+        }
+      }
+
+      if (allChunks.length === 0) {
+        console.log('⚠️ İşlenecek içerik bulunamadı');
+        return [];
+      }
+
+      console.log('🧠 Embeddinglar oluşturuluyor...');
+      const contents = allChunks.map(d => d.content);
+      const embeddings = await this.openrouter.createEmbeddings(contents);
+
+      const documentsWithEmbeddings = allChunks.map((doc, index) => ({
+        ...doc,
+        embedding: embeddings[index],
+        createdAt: new Date(),
+        metadata: {
+          ...doc.metadata,
+          type: doc.metadata?.type || 'document_chunk'
+        }
+      }));
+
+      await this.vectorDB.insertKnowledge(documentsWithEmbeddings);
+
+      console.log(`✅ ${documentsWithEmbeddings.length} chunk veritabanına eklendi`);
+      return documentsWithEmbeddings;
+    } catch (error) {
+      console.error('❌ Klasörden içe aktarma hatası:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Kullanıcı sorusuna cevap üret (Ana RAG fonksiyonu)
    */
   async query(userQuestion, options = {}) {
@@ -108,9 +185,10 @@ class HRRAGSystem {
       
       if (relevantDocs.length === 0) {
         console.log('⚠️ Hiç ilgili döküman bulunamadı, fallback kullanılıyor');
+        const { support } = require('./config');
         return await this.openrouter.hrChatCompletion(
-          userQuestion, 
-          "Genel HR bilgileri mevcut değil. İK departmanı ile iletişime geçin."
+          userQuestion,
+          support.fallbackMessage
         );
       }
       
@@ -151,7 +229,7 @@ class HRRAGSystem {
       // Hata durumunda fallback cevap
       return {
         question: userQuestion,
-        answer: "Özür dilerim, şu an teknik bir sorun yaşıyorum. Lütfen sorunuzu İK departmanımıza iletin: ik@sametei.com (Dahili: 101)",
+        answer: require('./config').support.fallbackMessage,
         sources: [],
         error: error.message,
         metadata: {

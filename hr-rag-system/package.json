@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "embed": "node scripts/embed-documents.js",
+    "ingest": "node scripts/ingest-pdfs.js",
     "update": "node scripts/update-knowledge.js",
     "test": "node scripts/test-rag.js"
   },

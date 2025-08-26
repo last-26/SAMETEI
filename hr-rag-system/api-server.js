@@ -434,23 +434,18 @@ async function startServer() {
 // Server başladıktan sonra HR prosedürlerini yükle
 async function loadHRProceduresAfterStart() {
   try {
-    console.log('📚 HR prosedürleri yükleniyor...');
-    
-    // CSV dosyasının yolunu belirle
-    const csvPath = require('path').join(__dirname, '..', 'hr_procedures.csv');
-    console.log(`📁 CSV dosyası yolu: ${csvPath}`);
-    
-    // HR prosedürlerini yükle
-    const result = await ragSystem.loadHRProcedures(csvPath);
-    
-    console.log(`✅ ${result.length} HR prosedürü başarıyla yüklendi!`);
-    
-    // Stats kontrol et
+    console.log('📚 Prosedür klasörü yükleniyor...');
+    const path = require('path');
+    const dirPath = path.join(__dirname, 'data', 'procedures');
+    console.log(`📁 Klasör yolu: ${dirPath}`);
+
+    const result = await ragSystem.loadDocumentsFromDir(dirPath);
+    console.log(`✅ ${result.length} chunk içe aktarıldı!`);
+
     const stats = await ragSystem.getSystemStats();
     console.log(`📊 Yükleme sonrası döküman sayısı: ${stats.database.documentCount}`);
-    
   } catch (error) {
-    console.error('❌ HR prosedürleri yükleme hatası:', error);
+    console.error('❌ Prosedür klasörü yükleme hatası:', error);
   }
 }
 

@@ -125,23 +125,45 @@ class OpenRouterClient {
    * Chat completion (RAG ile birleştirilmiş prompt)
    */
   async createChatCompletion(messages, temperature = 0.3) {
-    try {
-      const response = await this.client.post('/chat/completions', {
-        model: this.chatModel,
-        messages: messages,
-        temperature: temperature,
-        max_tokens: 2000,
-        stream: false
-      });
+    const retryCfg = require('../config').openrouter.retry;
+    let attempt = 0;
+    let modelToUse = this.chatModel;
+    let delay = retryCfg.initialDelayMs;
 
-      if (response.data && response.data.choices && response.data.choices.length > 0) {
-        return response.data.choices[0].message.content;
-      } else {
+    while (true) {
+      try {
+        const response = await this.client.post('/chat/completions', {
+          model: modelToUse,
+          messages: messages,
+          temperature: temperature,
+          max_tokens: 2000,
+          stream: false
+        });
+
+        if (response.data && response.data.choices && response.data.choices.length > 0) {
+          return response.data.choices[0].message.content;
+        }
         throw new Error('Chat completion response format is invalid');
+      } catch (error) {
+        const status = error.response?.status;
+        const isRateLimit = status === 429;
+        const canRetry = attempt < retryCfg.maxRetries;
+        if (isRateLimit && canRetry) {
+          attempt += 1;
+          await new Promise(r => setTimeout(r, delay));
+          delay *= retryCfg.backoffFactor;
+          continue;
+        }
+        // Son bir deneme: fallback modele geç
+        if (isRateLimit && modelToUse !== retryCfg.fallbackModel) {
+          modelToUse = retryCfg.fallbackModel;
+          attempt = 0;
+          delay = retryCfg.initialDelayMs;
+          continue;
+        }
+        console.error('Chat Completion Error:', error.response?.data || error.message);
+        throw error;
       }
-    } catch (error) {
-      console.error('Chat Completion Error:', error.response?.data || error.message);
-      throw error;
     }
   }
 
@@ -149,16 +171,17 @@ class OpenRouterClient {
    * HR Asistanı için özelleştirilmiş chat completion
    */
   async hrChatCompletion(userQuery, context = '') {
-    const systemPrompt = `Sen SAMETEI şirketinin HR (İnsan Kaynakları) asistanısın. 
+    const fallback = `${require('../config').support.fallbackMessage}`;
+    const systemPrompt = `Sen bir HR (İnsan Kaynakları) asistanısın.
 
 Görevin:
 - Çalışanların HR sorularını yanıtlamak
 - Her zaman nazik, yardımcı ve profesyonel olmak
 - Sadece aşağıdaki şirket bilgilerini kullanarak cevap vermek
 
-ÖNEMLİ: Eğer sorulan konu aşağıdaki bilgilerde yoksa, lütfen "Bu konuda detaylı bilgi için İK departmanımızla iletişime geçebilirsiniz (ik@sametei.com - Dahili: 101)" şeklinde yanıtla.
+ÖNEMLİ: Eğer sorulan konu aşağıdaki bilgilerde yoksa, lütfen şu mesajı ver: "${fallback}".
 
-ŞIRKET BILGILERI:
+ŞİRKET BİLGİLERİ:
 ${context}
 
 Lütfen kısa, öz ve anlaşılır cevaplar ver.`;

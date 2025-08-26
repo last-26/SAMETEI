@@ -26,10 +26,19 @@ npm install
 - OpenRouter API key
 - RAG parametreleri
 
-### 3. HR Prosedürlerini Embed Et
+### 3. HR Prosedürlerini Yükle (PDF/DOCX/TXT/CSV)
 
+1) Belgeleri klasöre kopyala:
 ```bash
-npm run embed
+hr-rag-system/data/procedures/
+  ├── izin_yonetimi.pdf
+  ├── yan_haklar.docx
+  └── diger_talimatlar.txt
+```
+
+2) Ingest çalıştır:
+```bash
+npm run ingest
 ```
 
 ### 4. Sistemi Test Et
@@ -137,8 +146,8 @@ services:
 
 ### Yeni HR Prosedürü Ekleme
 
-1. `hr_procedures.csv` dosyasını güncelle
-2. `npm run embed` çalıştır
+1. Yeni PDF/DOCX/TXT dosyanı `hr-rag-system/data/procedures` klasörüne koy
+2. `npm run ingest` çalıştır
 3. Test et: `npm run test`
 
 ### Custom Model Ekleme
@@ -153,7 +162,7 @@ openrouter: {
 
 ## 📝 Veri Formatı
 
-### HR Prosedürü CSV Formatı
+### HR Prosedürü CSV Formatı (opsiyonel)
 ```csv
 soru,kategori,cevap,anahtar_kelimeler
 "İzin nasıl alınır?","İzin Yönetimi","15 gün önceden...","izin,başvuru"
@@ -162,10 +171,10 @@ soru,kategori,cevap,anahtar_kelimeler
 ### MongoDB Document Formatı
 ```javascript
 {
-  content: "SORU: ... CEVAP: ...",
+  content: "Belge chunk içeriği...",
   embedding: [0.1, 0.2, ...], // 1536 boyutlu
   metadata: {
-    source: "hr_procedures.csv",
+    source: "izin_yonetimi.pdf",
     category: "izin-yönetimi",
     keywords: "izin,başvuru",
     chunkIndex: 0,
