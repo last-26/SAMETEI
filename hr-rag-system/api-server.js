@@ -31,8 +31,8 @@ app.use((req, res, next) => {
   console.log(`📦 Content-Type: ${req.headers['content-type'] || 'No content-type'}`);
   console.log(`📏 Content-Length: ${req.headers['content-length'] || 'No content-length'}`);
   
-  // LibreChat request'lerini detaylı logla
-  if (req.path === '/chat/completions' || req.path === '/gen_title') {
+  // LibreChat request'lerini detaylı logla (sadece chat akışı)
+  if (req.path === '/chat/completions' || req.path === '/v1/chat/completions') {
     console.log(`🤖 LIBRECHAT ${req.path.toUpperCase()} REQUEST:`);
     console.log('  Headers:', JSON.stringify(req.headers, null, 2));
     console.log('  Body:', JSON.stringify(req.body, null, 2));
@@ -121,30 +121,7 @@ app.post('/query', async (req, res) => {
   }
 });
 
-/**
- * LibreChat conversation title generation endpoint'i
- * POST /gen_title
- */
-app.post('/gen_title', async (req, res) => {
-  try {
-    const { messageId, conversationId, endpoint } = req.body;
-    
-    console.log(`🏷️ Title generation request for conversation: ${conversationId}`);
-    
-    // Basit bir title üret (LibreChat'in beklediği format)
-    const title = "SAMETEI HR Sohbeti";
-    
-    res.json({
-      title: title
-    });
-    
-  } catch (error) {
-    console.error('❌ Title generation hatası:', error);
-    res.status(500).json({
-      error: 'Title generation failed'
-    });
-  }
-});
+// Title generation endpoint'i devre dışı (rate limit tasarrufu için kaldırıldı)
 
 // OpenAI uyumlu modeller listesi
 app.get(['/v1/models', '/models'], (req, res) => {
@@ -186,6 +163,17 @@ app.post(['/chat/completions', '/v1/chat/completions'], async (req, res) => {
     }
     
     console.log(`🤖 LibreChat query: "${lastUserMessage.content}"`);
+
+    // Başlık üretimi isteklerini geçici olarak devre dışı bırak (lokal yanıt)
+    const isTitleRequest = typeof lastUserMessage.content === 'string'
+      && lastUserMessage.content.toLowerCase().includes('sohbet için en fazla 5 kelimelik');
+
+    if (isTitleRequest) {
+      // Başlık isteğini tamamen devre dışı bırak: 204 No Content
+      res.status(204).end();
+      console.log('✅ Title request blocked with 204 No Content');
+      return;
+    }
     
     // RAG ile cevap üret
     const ragResult = await ragSystem.query(lastUserMessage.content);

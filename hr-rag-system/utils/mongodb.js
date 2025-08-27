@@ -1,5 +1,7 @@
 const { MongoClient } = require('mongodb');
 const config = require('../config');
+const crypto = require('crypto');
+const fs = require('fs');
 
 class MongoDBVectorDB {
   constructor() {
@@ -33,7 +35,7 @@ class MongoDBVectorDB {
       console.log(`✅ MongoDB bağlandı: ${this.dbName}/${this.collectionName}`);
       
       // Vector search index'i oluştur (eğer yoksa)
-      await this.createVectorIndex();
+      await this.createIndexes();
       
     } catch (error) {
       console.error('❌ MongoDB bağlantı hatası:', error);
@@ -43,23 +45,23 @@ class MongoDBVectorDB {
   }
 
   /**
-   * Vector search için index oluştur
+   * Gerekli index'leri oluştur
    */
-  async createVectorIndex() {
+  async createIndexes() {
     try {
       if (this.useInMemory) return;
       
       const indexes = await this.collection.listIndexes().toArray();
-      const vectorIndexExists = indexes.some(index => index.name === 'vector_index');
+      const searchIndexExists = indexes.some(index => index.name === 'hr_search_index');
       
-      if (!vectorIndexExists) {
-        // MongoDB Atlas Vector Search index'i
-        // Not: Atlas olmayan MongoDB için text index kullanıyoruz
+      if (!searchIndexExists) {
+        // Text index yerine daha güvenli index'ler oluştur
         await this.collection.createIndex(
           { 
-            content: 'text',
+            content: 1,
             'metadata.category': 1,
-            'metadata.source': 1
+            'metadata.source': 1,
+            createdAt: -1
           },
           { name: 'hr_search_index' }
         );
@@ -143,8 +145,9 @@ class MongoDBVectorDB {
         return results;
       }
       
-      // Normal MongoDB için alternatif arama
-      return await this.textSearch(queryEmbedding, limit);
+      // Normal MongoDB için alternatif arama - embedding array'i string'e çevir
+      const queryString = Array.isArray(queryEmbedding) ? queryEmbedding.join(' ') : String(queryEmbedding);
+      return await this.textSearch(queryString, limit);
       
     } catch (error) {
       console.error('❌ Vector search hatası:', error);
@@ -213,8 +216,13 @@ class MongoDBVectorDB {
    */
   async textSearch(queryText, limit = 3) {
     try {
+      // $text operatörü yerine $regex kullan (text index gerektirmez)
       const results = await this.collection.find({
-        $text: { $search: queryText }
+        $or: [
+          { content: { $regex: queryText, $options: 'i' } },
+          { title: { $regex: queryText, $options: 'i' } },
+          { metadata: { $regex: queryText, $options: 'i' } }
+        ]
       })
       .limit(limit)
       .toArray();
@@ -307,6 +315,95 @@ class MongoDBVectorDB {
    */
   async shutdown() {
     await this.close();
+  }
+
+  /**
+   * Dosya hash'ini hesapla
+   */
+  calculateFileHash(filePath) {
+    try {
+      const fileBuffer = fs.readFileSync(filePath);
+      const hashSum = crypto.createHash('md5');
+      hashSum.update(fileBuffer);
+      return hashSum.digest('hex');
+    } catch (error) {
+      console.error(`❌ Dosya hash hesaplama hatası: ${filePath}`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Dosya zaten yüklenmiş mi kontrol et
+   */
+  async isFileAlreadyLoaded(filePath) {
+    try {
+      if (this.useInMemory) {
+        const fileName = require('path').basename(filePath);
+        return this.inMemoryStorage.some(doc => 
+          doc.metadata?.sourceFile === fileName
+        );
+      }
+
+      const fileName = require('path').basename(filePath);
+      const existingDoc = await this.collection.findOne({
+        'metadata.sourceFile': fileName
+      });
+
+      return !!existingDoc;
+    } catch (error) {
+      console.error('❌ Dosya kontrol hatası:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Yeni dosyaları tespit et
+   */
+  async getNewFiles(dirPath) {
+    try {
+      const supported = ['.pdf', '.docx', '.txt', '.csv'];
+      const files = fs.readdirSync(dirPath)
+        .filter(f => supported.includes(require('path').extname(f).toLowerCase()))
+        .map(f => require('path').join(dirPath, f));
+
+      const newFiles = [];
+      for (const file of files) {
+        const isLoaded = await this.isFileAlreadyLoaded(file);
+        if (!isLoaded) {
+          newFiles.push(file);
+        }
+      }
+
+      return newFiles;
+    } catch (error) {
+      console.error('❌ Yeni dosya tespit hatası:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Veritabanı istatistikleri
+   */
+  async getDatabaseStats() {
+    try {
+      if (this.useInMemory) {
+        return {
+          documentCount: this.inMemoryStorage.length,
+          uniqueFiles: new Set(this.inMemoryStorage.map(d => d.metadata?.sourceFile)).size
+        };
+      }
+
+      const documentCount = await this.collection.countDocuments();
+      const uniqueFiles = await this.collection.distinct('metadata.sourceFile');
+      
+      return {
+        documentCount,
+        uniqueFiles: uniqueFiles.length
+      };
+    } catch (error) {
+      console.error('❌ Veritabanı istatistik hatası:', error.message);
+      return { documentCount: 0, uniqueFiles: 0 };
+    }
   }
 }
 

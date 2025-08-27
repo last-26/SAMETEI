@@ -78,13 +78,14 @@ class HRRAGSystem {
   }
 
   /**
-   * Bir klasörden desteklenen tüm belgeleri içe aktar ve embed et
+   * Bir klasörden desteklenen tüm belgeleri içe aktar ve embed et (Akıllı yükleme)
    */
   async loadDocumentsFromDir(dirPath) {
     try {
       if (!this.isInitialized) {
         await this.initialize();
       }
+      const loadStartMs = Date.now();
 
       const fs = require('fs');
       const path = require('path');
@@ -95,27 +96,31 @@ class HRRAGSystem {
         throw new Error(`Klasör bulunamadı: ${absoluteDir}`);
       }
 
-      const supported = ['.pdf', '.docx', '.txt', '.csv'];
-      const files = fs.readdirSync(absoluteDir)
-        .filter(f => supported.includes(path.extname(f).toLowerCase()))
-        .map(f => path.join(absoluteDir, f));
+      // Mevcut veritabanı durumunu kontrol et
+      const dbStats = await this.vectorDB.getDatabaseStats();
+      console.log(`📊 Mevcut durum: ${dbStats.documentCount} döküman, ${dbStats.uniqueFiles} dosya`);
 
-      if (files.length === 0) {
-        console.log('⚠️ Klasörde desteklenen dosya bulunamadı');
+      // Sadece yeni dosyaları tespit et
+      const newFiles = await this.vectorDB.getNewFiles(absoluteDir);
+      
+      if (newFiles.length === 0) {
+        console.log('✅ Tüm dosyalar zaten yüklenmiş, yeni işlem yapılmıyor');
         return [];
       }
 
-      console.log(`📝 ${files.length} dosya bulundu, işleniyor...`);
+      console.log(`🆕 ${newFiles.length} yeni dosya bulundu, işleniyor...`);
 
       // Dosyaları sırayla işle (API limitleri için güvenli)
       const allChunks = [];
-      for (const file of files) {
+      for (const file of newFiles) {
         try {
           const chunks = await this.textProcessor.processDocument(file, { source: 'procedures' });
           chunks.forEach((c, idx) => {
             c.metadata = {
               ...c.metadata,
-              sourceFile: path.basename(file)
+              sourceFile: path.basename(file),
+              fileHash: this.vectorDB.calculateFileHash(file),
+              loadedAt: new Date()
             };
           });
           allChunks.push(...chunks);
@@ -146,7 +151,12 @@ class HRRAGSystem {
 
       await this.vectorDB.insertKnowledge(documentsWithEmbeddings);
 
-      console.log(`✅ ${documentsWithEmbeddings.length} chunk veritabanına eklendi`);
+      // Güncel istatistikleri göster
+      const newStats = await this.vectorDB.getDatabaseStats();
+      console.log(`✅ ${documentsWithEmbeddings.length} yeni chunk veritabanına eklendi`);
+      console.log(`📊 Güncel durum: ${newStats.documentCount} döküman, ${newStats.uniqueFiles} dosya`);
+      console.log(`⏱️ Yükleme süresi: ${Date.now() - loadStartMs} ms`);
+      
       return documentsWithEmbeddings;
     } catch (error) {
       console.error('❌ Klasörden içe aktarma hatası:', error);
@@ -162,6 +172,7 @@ class HRRAGSystem {
       if (!this.isInitialized) {
         await this.initialize();
       }
+      const queryStartMs = Date.now();
       
       const {
         topK = config.rag.topKResults,
@@ -202,11 +213,13 @@ class HRRAGSystem {
       
       // 4. LLM ile cevap üret
       const response = await this.openrouter.hrChatCompletion(userQuestion, context);
+      const elapsedMs = Date.now() - queryStartMs;
+      const perfNote = `\n\n[⏱️ ${elapsedMs} ms'de yanıtlandı | chunkSize=${config.rag.chunkSize} | topK=${topK}]`;
       
       // 5. Response objesi oluştur
       const result = {
         question: userQuestion,
-        answer: response,
+        answer: `${response}${perfNote}`,
         sources: relevantDocs.map(doc => ({
           content: doc.content.substring(0, 200) + '...',
           category: doc.metadata?.category || 'unknown',
@@ -216,6 +229,7 @@ class HRRAGSystem {
         metadata: {
           retrievedDocuments: relevantDocs.length,
           totalTokensUsed: this.textProcessor.getTokenCount(context + userQuestion + response),
+          responseTimeMs: elapsedMs,
           timestamp: new Date()
         }
       };

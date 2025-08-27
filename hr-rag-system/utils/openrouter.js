@@ -125,7 +125,8 @@ class OpenRouterClient {
    * Chat completion (RAG ile birleştirilmiş prompt)
    */
   async createChatCompletion(messages, temperature = 0.3) {
-    const retryCfg = require('../config').openrouter.retry;
+    const config = require('../config');
+    const retryCfg = config.openrouter.retry;
     let attempt = 0;
     let modelToUse = this.chatModel;
     let delay = retryCfg.initialDelayMs;
