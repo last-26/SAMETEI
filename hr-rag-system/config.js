@@ -15,7 +15,7 @@ module.exports = {
     apiKey: process.env.OPENROUTER_KEY, // .env dosyasından API key'i al
     baseURL: 'https://openrouter.ai/api/v1',
     embeddingModel: 'local', // OpenRouter'da embedding yok, local kullanacağız
-    chatModel: 'deepseek/deepseek-r1-0528:free',
+    chatModel: 'mistralai/mistral-7b-instruct:free',
     retry: {
       maxRetries: 5,
       initialDelayMs: 1000,
@@ -34,8 +34,8 @@ module.exports = {
 
   // RAG Ayarları
   rag: {
-    chunkSize: 500,
-    chunkOverlap: 50,
+    chunkSize: 750,
+    chunkOverlap: 75,
     topKResults: 5, // Daha fazla sonuç getir
     similarityThreshold: 0.3 // Daha düşük threshold (daha esnek eşleştirme)
   },
