@@ -35,9 +35,18 @@ module.exports = {
   // RAG Ayarları
   rag: {
     chunkSize: 750,
-    chunkOverlap: 75,
+    chunkOverlap: 125,
     topKResults: 5, // Daha fazla sonuç getir
     similarityThreshold: 0.3 // Daha düşük threshold (daha esnek eşleştirme)
+  },
+
+  // OCR Ayarları
+  ocr: {
+    // Windows için tesseract yolu (yüklüyse burayı doldurun), aksi halde PATH'ten bulunur
+    tesseractPath: process.env.TESSERACT_PATH || undefined,
+    languages: process.env.TESSERACT_LANG || 'tur+eng',
+    dpi: 300,
+    minTextThreshold: 120 // pdf-parse çıktısı bundan azsa OCR dene
   },
 
   // Server Ayarları

@@ -5,6 +5,7 @@ const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const { encoding_for_model } = require('tiktoken');
 const config = require('../config');
+const { isImageBasedPdf, ocrPdfToText } = require('./ocr');
 
 class TextProcessor {
   constructor() {
@@ -233,7 +234,21 @@ class TextProcessor {
       case 'pdf': {
         const dataBuffer = fs.readFileSync(filePath);
         const pdfData = await pdfParse(dataBuffer);
-        const text = this.cleanText(pdfData.text || '');
+        let text = this.cleanText(pdfData.text || '');
+
+        // OCR hibrit: metin azsa OCR uygula
+        const needOcr = text.length < (config.ocr?.minTextThreshold || 100) || await isImageBasedPdf(filePath);
+        if (needOcr) {
+          try {
+            const { text: ocrText } = await ocrPdfToText(filePath);
+            if (ocrText && ocrText.length > text.length * 0.5) {
+              text = this.cleanText(ocrText);
+            }
+          } catch (e) {
+            console.warn(`⚠️ OCR başarısız (${path.basename(filePath)}):`, e.message);
+          }
+        }
+
         return this.chunkText(text, {
           ...metadata,
           source: path.basename(filePath),
