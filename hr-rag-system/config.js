@@ -46,7 +46,8 @@ module.exports = {
     tesseractPath: process.env.TESSERACT_PATH || undefined,
     languages: process.env.TESSERACT_LANG || 'tur+eng',
     dpi: 300,
-    minTextThreshold: 120 // pdf-parse çıktısı bundan azsa OCR dene
+    minTextThreshold: 120, // pdf-parse çıktısı bundan azsa OCR dene
+    preferPython: true // mümkünse Python OCR kullan
   },
 
   // Server Ayarları

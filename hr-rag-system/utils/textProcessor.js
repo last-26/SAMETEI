@@ -6,6 +6,7 @@ const mammoth = require('mammoth');
 const { encoding_for_model } = require('tiktoken');
 const config = require('../config');
 const { isImageBasedPdf, ocrPdfToText } = require('./ocr');
+const { runPythonOCR } = require('./ocr_bridge');
 
 class TextProcessor {
   constructor() {
@@ -240,7 +241,16 @@ class TextProcessor {
         const needOcr = text.length < (config.ocr?.minTextThreshold || 100) || await isImageBasedPdf(filePath);
         if (needOcr) {
           try {
-            const { text: ocrText } = await ocrPdfToText(filePath);
+            // Önce Python OCR (daha güçlü)
+            let ocrText = '';
+            try {
+              const py = await runPythonOCR(filePath, { lang: process.env.TESSERACT_LANG || 'tur+eng', dpi: config.ocr?.dpi || 300 });
+              if (py && py.text) ocrText = py.text;
+            } catch (_) {
+              // Python başarısızsa Node OCR'a fallback
+              const nodeRes = await ocrPdfToText(filePath);
+              ocrText = nodeRes.text;
+            }
             if (ocrText && ocrText.length > text.length * 0.5) {
               text = this.cleanText(ocrText);
             }

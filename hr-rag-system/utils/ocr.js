@@ -3,7 +3,8 @@ const path = require('path');
 const os = require('os');
 const { fromPath } = require('pdf2pic');
 const tesseract = require('node-tesseract-ocr');
-const Jimp = require('jimp');
+let Jimp = null;
+try { Jimp = require('jimp'); } catch (_) { /* optional dependency */ }
 const pdfParse = require('pdf-parse');
 const config = require('../config');
 
@@ -82,13 +83,15 @@ async function ocrPdfToText(pdfPath, options = {}) {
 
       // Ön-işleme: gri, kontrast, normalize, threshold
       try {
-        const img = await Jimp.read(imagePath);
-        img
-          .grayscale()
-          .contrast(0.5)
-          .normalize()
-          .brightness(0.05)
-          .write(imagePath);
+        if (Jimp) {
+          const img = await Jimp.read(imagePath);
+          img
+            .grayscale()
+            .contrast(0.5)
+            .normalize()
+            .brightness(0.05)
+            .write(imagePath);
+        }
       } catch (_) { /* sessiz geç */ }
 
       const baseOptions = {
