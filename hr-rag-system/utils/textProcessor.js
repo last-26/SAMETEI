@@ -5,7 +5,7 @@ const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const { encoding_for_model } = require('tiktoken');
 const config = require('../config');
-const { isImageBasedPdf, ocrPdfToText } = require('./ocr');
+// OCR import'ları kaldırıldı, sadece Python bridge kullanılacak
 const { runPythonOCR } = require('./ocr_bridge');
 
 class TextProcessor {
@@ -95,40 +95,40 @@ class TextProcessor {
         
         for (const word of words) {
           const wordTokenCount = this.getTokenCount(word);
-          
-          if (wordTokens + wordTokenCount > this.chunkSize && wordChunk) {
-            chunks.push(this.createChunk(wordChunk.trim(), metadata, chunks.length));
-            wordChunk = '';
-            wordTokens = 0;
+          if (wordTokens + wordTokenCount > this.chunkSize) {
+            if (wordChunk) {
+              chunks.push(this.createChunk(wordChunk, metadata, chunks.length));
+            }
+            wordChunk = word;
+            wordTokens = wordTokenCount;
+          } else {
+            wordChunk += (wordChunk ? ' ' : '') + word;
+            wordTokens += wordTokenCount;
           }
-          
-          wordChunk += word + ' ';
-          wordTokens += wordTokenCount;
         }
         
-        if (wordChunk.trim()) {
-          chunks.push(this.createChunk(wordChunk.trim(), metadata, chunks.length));
+        if (wordChunk) {
+          chunks.push(this.createChunk(wordChunk, metadata, chunks.length));
         }
-        
         continue;
       }
       
-      // Normal chunk işlemi
-      if (currentTokens + sentenceTokens > this.chunkSize && currentChunk) {
+      // Normal chunk işleme
+      if (currentTokens + sentenceTokens > this.chunkSize) {
         chunks.push(this.createChunk(currentChunk, metadata, chunks.length));
         
-        // Overlap için son cümleleri korу
-        const overlapSentences = this.getLastSentences(currentChunk, this.chunkOverlap);
-        currentChunk = overlapSentences + sentence + ' ';
+        // Overlap için önceki chunk'ın son kısmını al
+        const overlapSentences = this.getOverlapContent(currentChunk);
+        currentChunk = overlapSentences + ' ' + sentence;
         currentTokens = this.getTokenCount(currentChunk);
       } else {
-        currentChunk += sentence + ' ';
+        currentChunk += (currentChunk ? ' ' : '') + sentence;
         currentTokens += sentenceTokens;
       }
     }
     
     // Son chunk'ı ekle
-    if (currentChunk.trim()) {
+    if (currentChunk) {
       chunks.push(this.createChunk(currentChunk, metadata, chunks.length));
     }
     
@@ -136,44 +136,41 @@ class TextProcessor {
   }
 
   /**
-   * Cümlelere ayır (Türkçe uyumlu)
+   * Cümlelere ayır
    */
   splitIntoSentences(text) {
-    // Türkçe noktalama işaretleri de dahil
-    const sentenceEnders = /[.!?;]\s+/g;
-    let sentences = text.split(sentenceEnders);
-    
-    // Boş cümleleri filtrele ve temizle
-    return sentences
+    // Basit cümle ayırma (Türkçe için iyileştirilebilir)
+    return text
+      .split(/[.!?\n]+/)
       .map(s => s.trim())
-      .filter(s => s.length > 10); // Çok kısa cümleleri atla
+      .filter(s => s.length > 0);
   }
 
   /**
-   * Son N token kadar cümleleri al (overlap için)
+   * Overlap için içerik al
    */
-  getLastSentences(text, tokenLimit) {
-    const sentences = this.splitIntoSentences(text);
-    let overlapText = '';
-    let tokenCount = 0;
+  getOverlapContent(text) {
+    const tokens = this.getTokenCount(text);
+    if (tokens <= this.chunkOverlap) {
+      return text;
+    }
     
-    for (let i = sentences.length - 1; i >= 0; i--) {
-      const sentence = sentences[i];
-      const sentenceTokens = this.getTokenCount(sentence);
-      
-      if (tokenCount + sentenceTokens > tokenLimit) {
-        break;
-      }
-      
-      overlapText = sentence + ' ' + overlapText;
-      tokenCount += sentenceTokens;
+    // Son chunkOverlap kadar token'ı al (yaklaşık)
+    const words = text.split(' ');
+    let overlapText = '';
+    let overlapTokens = 0;
+    
+    for (let i = words.length - 1; i >= 0 && overlapTokens < this.chunkOverlap; i--) {
+      const word = words[i];
+      overlapText = word + (overlapText ? ' ' + overlapText : '');
+      overlapTokens = this.getTokenCount(overlapText);
     }
     
     return overlapText;
   }
 
   /**
-   * Chunk objesi oluştur
+   * Chunk oluştur
    */
   createChunk(content, metadata, index) {
     return {
@@ -181,41 +178,29 @@ class TextProcessor {
       metadata: {
         ...metadata,
         chunkIndex: index,
-        tokenCount: this.getTokenCount(content),
-        createdAt: new Date()
+        tokenCount: this.getTokenCount(content.trim())
       }
     };
   }
 
   /**
-   * Mevcut hr_procedures.csv'yi işle
+   * PDF'in image-based olup olmadığını kontrol et
    */
-  async processHRProcedures(csvPath = '../hr_procedures.csv') {
+  async isImageBasedPdf(pdfPath) {
     try {
-      const fullPath = require('path').resolve(__dirname, csvPath);
-      const qaData = await this.processCSV(fullPath);
-      
-      // Her soru-cevap çiftini zaten optimal boyutta olduğu için chunk'lamaya gerek yok
-      const processedData = qaData.map((item, index) => ({
-        ...item,
-        metadata: {
-          ...item.metadata,
-          chunkIndex: index,
-          tokenCount: this.getTokenCount(item.content),
-          processedAt: new Date()
-        }
-      }));
-      
-      console.log(`✅ HR Prosedürleri işlendi: ${processedData.length} kayıt`);
-      return processedData;
-    } catch (error) {
-      console.error('❌ HR prosedürleri işleme hatası:', error);
-      throw error;
+      const buffer = fs.readFileSync(pdfPath);
+      const data = await pdfParse(buffer);
+      const text = this.cleanText(data.text || '');
+      // 50 karakterden azsa büyük olasılıkla görüntü tabanlıdır
+      return text.length < (config.ocr?.minTextThreshold || 50);
+    } catch (e) {
+      // Hata durumunda güvenli tarafta kal: OCR uygula
+      return true;
     }
   }
 
   /**
-   * Genel dokuman işleme (PDF, Word, txt için genişletilebilir)
+   * Dosyayı işle
    */
   async processDocument(filePath, metadata = {}) {
     const extension = filePath.split('.').pop().toLowerCase();
@@ -237,25 +222,24 @@ class TextProcessor {
         const pdfData = await pdfParse(dataBuffer);
         let text = this.cleanText(pdfData.text || '');
 
-        // OCR hibrit: metin azsa OCR uygula
-        const needOcr = text.length < (config.ocr?.minTextThreshold || 100) || await isImageBasedPdf(filePath);
+        // OCR kontrolü: metin azsa veya image-based PDF ise OCR uygula
+        const needOcr = text.length < (config.ocr?.minTextThreshold || 50) || await this.isImageBasedPdf(filePath);
+        
         if (needOcr) {
           try {
-            // Önce Python OCR (daha güçlü)
-            let ocrText = '';
-            try {
-              const py = await runPythonOCR(filePath, { lang: process.env.TESSERACT_LANG || 'tur+eng', dpi: config.ocr?.dpi || 300 });
-              if (py && py.text) ocrText = py.text;
-            } catch (_) {
-              // Python başarısızsa Node OCR'a fallback
-              const nodeRes = await ocrPdfToText(filePath);
-              ocrText = nodeRes.text;
-            }
-            if (ocrText && ocrText.length > text.length * 0.5) {
-              text = this.cleanText(ocrText);
+            console.log(`[OCR] Python OCR çağrılıyor: ${path.basename(filePath)}`);
+            const py = await runPythonOCR(filePath, { 
+              lang: process.env.TESSERACT_LANG || 'tur+eng', 
+              dpi: config.ocr?.dpi || 450
+            });
+            
+            if (py && py.text && py.text.length > 10) {
+              text = this.cleanText(py.text);
+              console.log(`[OCR] Python OCR başarılı, ${text.length} karakter okundu`);
             }
           } catch (e) {
-            console.warn(`⚠️ OCR başarısız (${path.basename(filePath)}):`, e.message);
+            console.error(`[OCR] Python OCR hatası:`, e.message);
+            // OCR başarısız olsa bile mevcut metni kullan
           }
         }
 

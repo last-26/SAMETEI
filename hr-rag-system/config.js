@@ -41,14 +41,14 @@ module.exports = {
   },
 
   // OCR Ayarları
-  ocr: {
-    // Windows için tesseract yolu (yüklüyse burayı doldurun), aksi halde PATH'ten bulunur
-    tesseractPath: process.env.TESSERACT_PATH || undefined,
-    languages: process.env.TESSERACT_LANG || 'tur+eng',
-    dpi: 300,
-    minTextThreshold: 120, // pdf-parse çıktısı bundan azsa OCR dene
-    preferPython: true // mümkünse Python OCR kullan
-  },
+ // hr-rag-system/config.js
+ocr: {
+  tesseractPath: process.env.TESSERACT_PATH || undefined,
+  languages: process.env.TESSERACT_LANG || 'tur+eng',
+  dpi: 450,  // 300'den 450'ye çıkar
+  minTextThreshold: 50, // 120'den 50'ye düşür (daha çok PDF'e OCR uygulansın)
+  preferPython: true
+},
 
   // Server Ayarları
   server: {
