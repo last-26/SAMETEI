@@ -1,457 +1,351 @@
 #!/usr/bin/env python3
-import pytesseract
-from PIL import Image, ImageEnhance, ImageFilter, ImageOps
-import cv2
-import numpy as np
-from pdf2image import convert_from_path
+# -*- coding: utf-8 -*-
+"""
+Geliştirilmiş OCR Sistemi - Basit ve Etkili
+Türkçe optimizasyonu ile
+"""
+
+import os
 import sys
 import json
-import os
-from typing import Dict, Any, List, Tuple
 import re
+import gc
+import cv2
+import numpy as np
+from PIL import Image
+import pytesseract
+from pdf2image import convert_from_path
+import logging
 
-class AdvancedOCR:
-    def __init__(self, lang="tur+eng", dpi=450):
+# Logging ayarları
+logging.basicConfig(level=logging.INFO, format='%(message)s', stream=sys.stderr)
+logger = logging.getLogger(__name__)
+
+class SmartOCR:
+    """Akıllı OCR sınıfı - basit ve etkili"""
+    
+    def __init__(self, lang='tur+eng', dpi=300):
         self.lang = lang
-        self.dpi = dpi
+        self.dpi = min(dpi, 450)  # Maksimum DPI sınırı
+        self.setup_tesseract()
         
-    def preprocess_for_colored_background(self, image):
-        """Renkli arka plan üzerindeki metinleri iyileştir"""
-        # PIL Image'ı numpy array'e çevir
-        img_array = np.array(image)
-        
-        # BGR'ye çevir (OpenCV formatı)
-        if len(img_array.shape) == 3:
-            img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-        else:
-            img_bgr = img_array
-        
-        # HSV renk uzayına çevir
-        hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-        
-        # Farklı renk aralıklarını tespit et
-        color_ranges = [
-            # Kırmızı (iki aralık - HSV'de kırmızı 0 ve 180 civarında)
-            ([0, 50, 50], [10, 255, 255]),
-            ([170, 50, 50], [180, 255, 255]),
-            # Mavi
-            ([100, 50, 50], [130, 255, 255]),
-            # Yeşil
-            ([40, 50, 50], [80, 255, 255]),
-            # Sarı
-            ([20, 50, 50], [40, 255, 255]),
-        ]
-        
-        processed_regions = []
-        
-        for lower, upper in color_ranges:
-            lower = np.array(lower)
-            upper = np.array(upper)
-            
-            # Renk maskesi oluştur
-            mask = cv2.inRange(hsv, lower, upper)
-            
-            # Morfolojik işlemler ile temizle
-            kernel = np.ones((3, 3), np.uint8)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-            
-            # Konturları bul
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            
-            for contour in contours:
-                area = cv2.contourArea(contour)
-                if area > 500:  # Minimum alan filtresi
-                    x, y, w, h = cv2.boundingRect(contour)
-                    
-                    # Bölgeyi kırp
-                    roi = img_bgr[y:y+h, x:x+w]
-                    
-                    # Bu bölgeyi işle
-                    processed = self.enhance_text_region(roi)
-                    
-                    processed_regions.append({
-                        'image': processed,
-                        'bbox': (x, y, w, h),
-                        'is_vertical': h > w * 1.5  # Dikey metin tespiti
-                    })
-        
-        return processed_regions
-    
-    def enhance_text_region(self, roi):
-        """Metin bölgesini iyileştir"""
-        # Gri tonlamaya çevir
-        if len(roi.shape) == 3:
-            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = roi
-        
-        # CLAHE (Contrast Limited Adaptive Histogram Equalization)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        enhanced = clahe.apply(gray)
-        
-        # Adaptive threshold
-        thresh = cv2.adaptiveThreshold(enhanced, 255, 
-                                     cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                     cv2.THRESH_BINARY, 11, 2)
-        
-        # Tersine çevir (beyaz arka plan, siyah metin)
-        inverted = cv2.bitwise_not(thresh)
-        
-        # Gürültü azaltma
-        denoised = cv2.medianBlur(inverted, 3)
-        
-        return Image.fromarray(denoised)
-    
-    def detect_and_rotate_vertical_text(self, image):
-        """Dikey metinleri tespit et ve döndür"""
-        img_array = np.array(image)
-        
-        if len(img_array.shape) == 3:
-            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-        else:
-            gray = img_array
-        
-        # Kenar tespiti
-        edges = cv2.Canny(gray, 50, 150, apertureSize=3)
-        
-        # Hough Line Transform ile çizgileri tespit et
-        lines = cv2.HoughLinesP(edges, 1, np.pi/180, 100, 
-                                minLineLength=100, maxLineGap=10)
-        
-        if lines is not None:
-            # Dikey çizgilerin sayısını kontrol et
-            vertical_lines = 0
-            horizontal_lines = 0
-            
-            for line in lines:
-                x1, y1, x2, y2 = line[0]
-                angle = np.abs(np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi)
-                
-                if 80 <= angle <= 100:  # Dikey çizgi
-                    vertical_lines += 1
-                elif angle <= 10 or angle >= 170:  # Yatay çizgi
-                    horizontal_lines += 1
-            
-            # Eğer dikey çizgiler baskınsa, görüntüyü döndür
-            if vertical_lines > horizontal_lines * 1.5:
-                return image.rotate(90, expand=True)
-        
-        return image
-    
-    def process_form_structure(self, image):
-        """Form yapısını analiz et ve bölgelere ayır"""
-        img_array = np.array(image)
-        
-        if len(img_array.shape) == 3:
-            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-        else:
-            gray = img_array
-        
-        # Kenar tespiti
-        edges = cv2.Canny(gray, 30, 100)
-        
-        # Konturları bul
-        contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        
-        # Dikdörtgen bölgeleri tespit et
-        form_regions = []
-        for contour in contours:
-            peri = cv2.arcLength(contour, True)
-            approx = cv2.approxPolyDP(contour, 0.04 * peri, True)
-            
-            # Dikdörtgen kontrolü
-            if len(approx) == 4:
-                x, y, w, h = cv2.boundingRect(approx)
-                
-                # Minimum boyut filtresi
-                if w > 50 and h > 20:
-                    roi = image.crop((x, y, x + w, y + h))
-                    form_regions.append({
-                        'region': roi,
-                        'bbox': (x, y, w, h),
-                        'is_vertical': h > w * 1.5
-                    })
-        
-        return form_regions
-    
-    def ocr_with_multiple_configs(self, image, is_vertical=False):
-        """Farklı konfigürasyonlarla OCR dene"""
-        configs = []
-        
-        if is_vertical:
-            # Dikey metin için özel konfigürasyonlar
-            configs = [
-                f'--oem 3 --psm 5 -l {self.lang}',  # Dikey metin bloğu
-                f'--oem 3 --psm 6 -l {self.lang} rotate=90',  # 90 derece döndürülmüş
-            ]
-            # Görüntüyü döndür ve tekrar dene
-            rotated = image.rotate(90, expand=True)
-            configs.append(('rotated', f'--oem 3 --psm 11 -l {self.lang}'))
-        else:
-            # Yatay metin için konfigürasyonlar
-            configs = [
-                f'--oem 3 --psm 11 -l {self.lang}',  # Sparse text
-                f'--oem 3 --psm 6 -l {self.lang}',   # Uniform block
-                f'--oem 3 --psm 8 -l {self.lang}',   # Single word
-                f'--oem 3 --psm 3 -l {self.lang}',   # Automatic
-            ]
-        
-        best_text = ""
-        best_confidence = 0
-        
-        for config in configs:
-            try:
-                if isinstance(config, tuple) and config[0] == 'rotated':
-                    # Döndürülmüş görüntü için
-                    text = pytesseract.image_to_string(rotated, config=config[1])
-                    data = pytesseract.image_to_data(rotated, config=config[1], output_type=pytesseract.Output.DICT)
-                else:
-                    text = pytesseract.image_to_string(image, config=config)
-                    data = pytesseract.image_to_data(image, config=config, output_type=pytesseract.Output.DICT)
-                
-                # Güven skorunu hesapla
-                confidences = [int(c) for c in data['conf'] if int(c) > 0]
-                avg_confidence = sum(confidences) / len(confidences) if confidences else 0
-                
-                # En iyi sonucu seç
-                if avg_confidence > best_confidence and text.strip():
-                    best_text = text
-                    best_confidence = avg_confidence
-                    
-            except Exception:
-                continue
-        
-        return best_text
-    
-    def clean_turkish_text(self, text):
-        """Türkçe karakterleri düzelt ve metni temizle"""
-        # Yanlış tanınan Türkçe karakterleri düzelt
-        replacements = {
-            'i̇': 'i',
-            'I': 'ı',  # Büyük I'yı küçük ı olarak düzelt (kontekste göre)
-            '6': 'ğ',  # Bazen 6 olarak tanınır
-            '§': 'ş',
-            '¢': 'ç',
-            '0': 'ö',  # Bazen 0 olarak tanınır
-            'U': 'ü',  # Bazen U olarak tanınır
+        # Türkçe kelime düzeltmeleri
+        self.turkish_fixes = {
+            # OCR'da sık karışan kelimeler
+            'Tanhi': 'Tarihi', 'tanhi': 'tarihi', 'Tarth': 'Tarih',
+            'Yen': 'Yeri', 'yen': 'yeri', 'Ginş': 'Giriş', 'ginş': 'giriş',
+            'Toni': 'Türü', 'toni': 'türü', 'Türü': 'Türü',
+            'Binmi': 'Birimi', 'binmi': 'birimi',
+            'Baslama': 'Başlama', 'baslama': 'başlama',
+            'edenm': 'ederim', 'Edenm': 'Ederim',
+            'Numarasi': 'Numarası', 'numarasi': 'numarası',
+            'Kirmlik': 'Kimlik', 'kirmlik': 'kimlik',
+            'izntn': 'iznin', 'İzntn': 'İznin',
+            'belirtiğim': 'belirttiğim', 'belirtigim': 'belirttiğim',
+            'tanhler': 'tarihler', 'Tanhler': 'Tarihler',
+            'ORAYI': 'ONAYI', 'orayi': 'onayı',
+            'İşveran': 'İşveren', 'işveran': 'işveren',
+            'Adi': 'Adı', 'adi': 'adı',
+            'imza': 'İmza'
         }
+    
+    def setup_tesseract(self):
+        """Tesseract yolunu ayarla"""
+        if os.name == 'nt':  # Windows
+            tesseract_paths = [
+                os.environ.get('TESSERACT_PATH'),
+                r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+                r'C:\Users\{}\AppData\Local\Tesseract-OCR\tesseract.exe'.format(os.getenv('USERNAME', '')),
+                r'D:\Program Files\Tesseract-OCR\tesseract.exe'
+            ]
+            
+            for path in tesseract_paths:
+                if path and os.path.exists(path):
+                    pytesseract.pytesseract.tesseract_cmd = path
+                    logger.info(f"✅ Tesseract bulundu: {path}")
+                    return
+            
+            logger.warning("⚠️ Tesseract yolu bulunamadı, sistem PATH'i kullanılacak")
+    
+    def preprocess_image(self, image):
+        """Basit görüntü ön işleme"""
+        try:
+            # PIL -> OpenCV
+            img_array = np.array(image)
+            if len(img_array.shape) == 3:
+                img = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+            else:
+                img = cv2.cvtColor(img_array, cv2.COLOR_GRAY2BGR)
+            
+            # Boyut kontrolü
+            h, w = img.shape[:2]
+            if max(h, w) > 2500:
+                scale = 2500 / max(h, w)
+                new_w, new_h = int(w * scale), int(h * scale)
+                img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
+            
+            # Gri tonlama
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            
+            # Kontrast artırma
+            enhanced = cv2.convertScaleAbs(gray, alpha=1.3, beta=15)
+            
+            # Adaptive threshold
+            binary = cv2.adaptiveThreshold(
+                enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                cv2.THRESH_BINARY, 11, 2
+            )
+            
+            return Image.fromarray(binary)
+            
+        except Exception as e:
+            logger.error(f"❌ Ön işleme hatası: {e}")
+            return image
+    
+    def is_table_like(self, image):
+        """Basit tablo algılama"""
+        try:
+            img_array = np.array(image)
+            
+            # Yatay çizgileri algıla
+            horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (50, 1))
+            horizontal_lines = cv2.morphologyEx(img_array, cv2.MORPH_OPEN, horizontal_kernel)
+            
+            # Dikey çizgileri algıla
+            vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 50))
+            vertical_lines = cv2.morphologyEx(img_array, cv2.MORPH_OPEN, vertical_kernel)
+            
+            # Çizgi yoğunluğu
+            h_density = np.sum(horizontal_lines > 0) / horizontal_lines.size
+            v_density = np.sum(vertical_lines > 0) / vertical_lines.size
+            
+            # Güçlü tablo sinyali gerekli
+            is_table = (h_density > 0.05 and v_density > 0.05)
+            
+            if is_table:
+                logger.info(f"📋 Güçlü tablo algılandı (H:{h_density:.3f}, V:{v_density:.3f})")
+            else:
+                logger.info(f"📄 Normal döküman (H:{h_density:.3f}, V:{v_density:.3f})")
+            
+            return is_table
+            
+        except Exception as e:
+            logger.error(f"❌ Tablo algılama hatası: {e}")
+            return False
+    
+    def smart_ocr(self, image):
+        """Akıllı OCR - çoklu yaklaşım"""
+        try:
+            # Farklı OCR konfigürasyonları
+            configs = [
+                '--psm 4 --oem 1',  # Single column
+                '--psm 6 --oem 1',  # Single uniform block
+                '--psm 3 --oem 1',  # Fully automatic
+                '--psm 1 --oem 1'   # Auto with OSD
+            ]
+            
+            best_text = ""
+            best_score = 0
+            
+            for i, config in enumerate(configs):
+                try:
+                    logger.info(f"  📝 OCR denemesi {i+1}/{len(configs)}")
+                    
+                    text = pytesseract.image_to_string(
+                        image, lang=self.lang, config=config
+                    ).strip()
+                    
+                    if text and len(text) > 5:
+                        # Basit kalite skoru
+                        cleaned_text = self.clean_text(text)
+                        word_count = len(cleaned_text.split())
+                        char_count = len(cleaned_text)
+                        unique_words = len(set(cleaned_text.lower().split()))
+                        
+                        if word_count > 0:
+                            diversity = unique_words / word_count
+                            score = char_count * diversity * 0.5 + word_count * 2
+                            
+                            if score > best_score:
+                                best_score = score
+                                best_text = cleaned_text
+                                logger.info(f"    ✅ Yeni en iyi skor: {score:.1f}")
+                        
+                except Exception as e:
+                    logger.info(f"    ❌ Config {i+1} başarısız: {e}")
+                    continue
+            
+            return best_text
+            
+        except Exception as e:
+            logger.error(f"❌ OCR hatası: {e}")
+            return ""
+    
+    def clean_text(self, text):
+        """Türkçe metin temizleme"""
+        if not text:
+            return ""
         
-        # Kelime bazlı düzeltmeler
-        word_replacements = {
-            'SIRKET1': 'ŞİRKETİ',
-            'IZIN': 'İZİN',
-            'YILLIK': 'YILLIK',
-            'SAGLIK': 'SAĞLIK',
-            'DIGER': 'DİĞER',
-            'IMZA': 'İMZA',
-            'YONETICI': 'YÖNETİCİ',
-            'KIRMIZ1': 'KIRMIZI',
-            'MAV1': 'MAVİ',
-            'YE§IL': 'YEŞİL',
-            'SARI': 'SARI',
-        }
-        
-        # Karakterleri düzelt
-        for old, new in replacements.items():
+        # Türkçe kelime düzeltmeleri
+        for old, new in self.turkish_fixes.items():
             text = text.replace(old, new)
         
-        # Kelimeleri düzelt
-        for old, new in word_replacements.items():
-            text = re.sub(r'\b' + old + r'\b', new, text, flags=re.IGNORECASE)
+        # Tarih düzeltmeleri - daha kapsamlı
+        text = re.sub(r'O(\d)', r'0\1', text)  # O2 -> 02
+        text = re.sub(r'(\d)O', r'\g<1>0', text)  # 2O -> 20
+        text = re.sub(r'(\d{2})\s+O(\d)', r'\1.0\2', text)  # 02 O1 -> 02.01
+        text = re.sub(r'(\d{2})\s+(\d{2})\s+(\d{4})', r'\1.\2.\3', text)  # 02 01 2020 -> 02.01.2020
         
-        # Gereksiz karakterleri temizle
-        text = re.sub(r'[^\w\s\-\.\,\:\;\!\?\(\)\/\=\+\*\&\%\$\#\@ğüşıöçĞÜŞİÖÇ]', '', text)
+        # Tarih formatında I harfi düzeltmeleri (OCR'da 1 rakamı I olarak okunuyor)
+        text = re.sub(r'(\d{2})\s+I(\d)', r'\1.0\2', text)  # 02 I1 -> 02.01
+        text = re.sub(r'(\d{2})\s+(\d{2})\s+I(\d{4})', r'\1.\2.0\3', text)  # 02 01 I2020 -> 02.01.02020
+        text = re.sub(r'(\d{2})\s+I(\d)\s+(\d{4})', r'\1.0\2.\3', text)  # 02 I1 2020 -> 02.01.2020
         
-        # Çoklu boşlukları tek boşluğa indir
+        # T.C düzeltmeleri - daha kapsamlı
+        text = re.sub(r'T\s*Ç', 'T.C', text)  # T Ç -> T.C
+        text = re.sub(r'T\s*C(?!\w)', 'T.C', text)  # T C -> T.C
+        text = re.sub(r'T\s*Ç(?!\w)', 'T.C', text)  # T Ç -> T.C
+        text = re.sub(r'T\.Ç', 'T.C', text)  # T.Ç -> T.C
+        
+        # Geçersiz karakterleri temizle
+        text = re.sub(r'[^\w\sğüşıöçĞÜŞİÖÇ.,!?:;()\-=|/]', ' ', text)
+        
+        # Çoklu boşlukları düzelt
         text = re.sub(r'\s+', ' ', text)
         
-        return text.strip()
-
-    def ocr_pdf_to_text(self, pdf_path: str) -> Dict[str, Any]:
-        """Ana OCR fonksiyonu - geliştirilmiş versiyon"""
+        # Form düzeltmeleri
+        text = text.replace('T C', 'T.C.')
+        text = text.replace('TC', 'T.C.')
         
-        # Progress bar'ı sustur
-        old_stderr = sys.stderr
-        sys.stderr = open(os.devnull, 'w')
+        # Anlamsız tekrarları filtrele
+        words = []
+        for word in text.split():
+            word = word.strip('.,!?:;()-')
+            # Anlamlı kelimeler
+            if (len(word) >= 2 and 
+                not re.match(r'^[A-Z]{1,2}$', word) and
+                not re.match(r'^[.,-]+$', word) and
+                word not in ['KE', 'Te', 'Ke', 'TE', 'ke', 'te']):
+                words.append(word)
         
+        result = ' '.join(words).strip()
+        
+        # Son temizlik
+        result = re.sub(r'\n{3,}', '\n\n', result)
+        result = re.sub(r' {2,}', ' ', result)
+        
+        return result
+    
+    def ocr_pdf(self, pdf_path):
+        """PDF'yi OCR ile işle - basit yaklaşım"""
         try:
-            # PDF'i görüntüye çevir (yüksek DPI ile)
-            images = convert_from_path(pdf_path, dpi=self.dpi)
-        finally:
-            sys.stderr = old_stderr
-        
-        all_texts = []
-        
-        for page_num, image in enumerate(images, 1):
-            page_texts = []
+            logger.info(f"📄 PDF işleniyor: {os.path.basename(pdf_path)}")
             
-            # 1. Form yapısını analiz et
-            form_regions = self.process_form_structure(image)
+            # PDF'yi görüntülere çevir
+            try:
+                images = convert_from_path(
+                    pdf_path,
+                    dpi=self.dpi,
+                    thread_count=1
+                )
+            except Exception as e:
+                logger.error(f"❌ PDF dönüştürme hatası: {e}")
+                return {
+                    "success": False,
+                    "error": f"PDF dönüştürme hatası: {str(e)}",
+                    "text": ""
+                }
             
-            # 2. Renkli arka planlı bölgeleri işle
-            colored_regions = self.preprocess_for_colored_background(image)
+            logger.info(f"📊 {len(images)} sayfa bulundu")
             
-            # 3. Her renkli bölge için OCR
-            for region_info in colored_regions:
-                region_img = region_info['image']
-                is_vertical = region_info['is_vertical']
-                
-                # Dikey metinleri özel olarak işle
-                if is_vertical:
-                    text = self.ocr_with_multiple_configs(region_img, is_vertical=True)
-                else:
-                    text = self.ocr_with_multiple_configs(region_img, is_vertical=False)
-                
-                if text.strip():
-                    # Türkçe karakterleri düzelt
-                    text = self.clean_turkish_text(text)
-                    page_texts.append(text)
+            all_pages = []
             
-            # 4. Form bölgelerini işle (renkli olmayan alanlar)
-            for region_info in form_regions:
-                region = region_info['region']
-                is_vertical = region_info['is_vertical']
+            for page_num, image in enumerate(images, 1):
+                logger.info(f"📄 Sayfa {page_num}/{len(images)} işleniyor...")
                 
-                # Görüntüyü iyileştir
-                enhancer = ImageEnhance.Contrast(region)
-                region = enhancer.enhance(2.0)
-                
-                # OCR uygula
-                text = self.ocr_with_multiple_configs(region, is_vertical=is_vertical)
-                
-                if text.strip():
-                    text = self.clean_turkish_text(text)
-                    page_texts.append(text)
-            
-            # 5. Eğer bölgesel OCR başarısız olduysa, tüm sayfayı dene
-            if not page_texts:
-                # Görüntüyü ön işle
-                enhanced = self.enhance_entire_page(image)
-                
-                # Farklı PSM modlarıyla dene
-                for psm in [11, 6, 3, 4, 12]:
-                    config = f'--oem 3 --psm {psm} -l {self.lang}'
-                    text = pytesseract.image_to_string(enhanced, config=config)
+                try:
+                    # Görüntüyü ön işle
+                    processed_img = self.preprocess_image(image)
                     
-                    if text.strip():
-                        text = self.clean_turkish_text(text)
-                        page_texts.append(text)
-                        break
+                    # Tablo algılama (basit)
+                    is_table = self.is_table_like(processed_img)
+                    
+                    # OCR yap
+                    page_text = self.smart_ocr(processed_img)
+                    
+                    if page_text:
+                        # Sayfa başlığı ekle
+                        page_content = f"=== SAYFA {page_num} ===\n{page_text}"
+                        all_pages.append(page_content)
+                        logger.info(f"✅ Sayfa {page_num}: {len(page_text)} karakter")
+                    else:
+                        logger.warning(f"⚠️ Sayfa {page_num}: Metin bulunamadı")
+                
+                except Exception as e:
+                    logger.error(f"❌ Sayfa {page_num} hatası: {e}")
+                    continue
+                finally:
+                    # Memory temizliği
+                    del image
+                    gc.collect()
             
-            # Sayfa metnini birleştir
-            if page_texts:
-                # Metinleri mantıklı bir sırada birleştir
-                page_content = self.organize_page_content(page_texts)
-                all_texts.append(f"=== SAYFA {page_num} ===\n{page_content}")
-            else:
-                all_texts.append(f"=== SAYFA {page_num} ===\n[Metin okunamadı]")
-        
-        full_text = "\n\n".join(all_texts)
-        
-        # Son temizlik ve düzeltmeler
-        full_text = self.post_process_text(full_text)
-        
-        return {
-            "success": True,
-            "text": full_text,
-            "total_pages": len(images)
-        }
-    
-    def enhance_entire_page(self, image):
-        """Tüm sayfayı iyileştir"""
-        # Numpy array'e çevir
-        img_array = np.array(image)
-        
-        # Gri tonlamaya çevir
-        if len(img_array.shape) == 3:
-            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-        else:
-            gray = img_array
-        
-        # Denoise
-        denoised = cv2.fastNlMeansDenoising(gray, None, 10, 7, 21)
-        
-        # Sharpen
-        kernel = np.array([[-1,-1,-1],
-                          [-1, 9,-1],
-                          [-1,-1,-1]])
-        sharpened = cv2.filter2D(denoised, -1, kernel)
-        
-        # CLAHE
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        enhanced = clahe.apply(sharpened)
-        
-        # Binary threshold
-        _, binary = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        
-        return Image.fromarray(binary)
-    
-    def organize_page_content(self, texts):
-        """Sayfa içeriğini organize et"""
-        # Boş olmayan metinleri filtrele
-        valid_texts = [t for t in texts if t.strip()]
-        
-        # Form alanlarını tespit et
-        organized = []
-        
-        for text in valid_texts:
-            # Tek kelimelik renkli alanları tespit et (KIRMIZI, MAVİ, vb.)
-            if len(text.split()) == 1 and text.upper() in ['KIRMIZI', 'MAVİ', 'YEŞİL', 'SARI']:
-                organized.append(f"[RENK ETİKETİ: {text.upper()}]")
-            else:
-                organized.append(text)
-        
-        return "\n".join(organized)
-    
-    def post_process_text(self, text):
-        """Son işleme ve düzeltmeler"""
-        # Form yapısını düzenle
-        text = text.replace("PersonelNo", "Personel No.")
-        text = text.replace("Ad soya", "Ad Soyadı")
-        text = text.replace("Izin Turi", "İzin Türü")
-        text = text.replace("Yillik Izin", "Yıllık İzin")
-        text = text.replace("Mazeret Izni", "Mazeret İzni")
-        text = text.replace("Saglik Izni", "Sağlık İzni")
-        text = text.replace("Diger", "Diğer")
-        text = text.replace("Imza", "İmza")
-        text = text.replace("Yönetici", "Yönetici")
-        
-        # Tarih formatlarını düzelt
-        text = re.sub(r'(\d+)\s*/\s*(\d+)\s*/\s*(\d+)', r'\1/\2/\3', text)
-        
-        # Çoklu boşlukları ve satır sonlarını düzenle
-        text = re.sub(r'\n{3,}', '\n\n', text)
-        text = re.sub(r' {2,}', ' ', text)
-        
-        return text.strip()
+            # Final metin
+            final_text = "\n\n".join(all_pages)
+            
+            logger.info(f"🎉 OCR tamamlandı: {len(final_text)} karakter")
+            
+            return {
+                "success": True,
+                "text": final_text,
+                "pages": len(images),
+                "character_count": len(final_text)
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ OCR genel hatası: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "text": ""
+            }
+        finally:
+            gc.collect()
 
 def main():
+    """Ana fonksiyon"""
     try:
         # UTF-8 encoding
         import io
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
         
         if len(sys.argv) < 2:
-            print(json.dumps({"success": False, "error": "PDF dosya yolu gerekli"}))
+            result = {"success": False, "error": "PDF dosya yolu gerekli"}
+            print(json.dumps(result, ensure_ascii=False))
             return
         
         pdf_path = sys.argv[1]
-        lang = os.environ.get("TESSERACT_LANG", "tur+eng")
-        dpi = int(os.environ.get("OCR_DPI", "450"))
         
         if not os.path.exists(pdf_path):
-            print(json.dumps({"success": False, "error": f"Dosya bulunamadı: {pdf_path}"}))
+            result = {"success": False, "error": f"Dosya bulunamadı: {pdf_path}"}
+            print(json.dumps(result, ensure_ascii=False))
             return
         
-        # Advanced OCR sınıfını kullan
-        ocr = AdvancedOCR(lang=lang, dpi=dpi)
-        result = ocr.ocr_pdf_to_text(pdf_path)
+        # OCR ayarları
+        lang = os.environ.get("TESSERACT_LANG", "tur+eng")
+        dpi = int(os.environ.get("OCR_DPI", "300"))
         
+        logger.info(f"🚀 Akıllı OCR başlatılıyor (lang={lang}, dpi={dpi})")
+        
+        # OCR işlemi
+        ocr = SmartOCR(lang=lang, dpi=dpi)
+        result = ocr.ocr_pdf(pdf_path)
+        
+        # Sonucu yazdır
         print(json.dumps(result, ensure_ascii=False))
         
     except Exception as e:
-        print(json.dumps({"success": False, "error": str(e)}))
+        result = {"success": False, "error": str(e)}
+        print(json.dumps(result, ensure_ascii=False))
 
 if __name__ == "__main__":
     main()

@@ -11,21 +11,27 @@
     "test": "node scripts/test-rag.js"
   },
   "dependencies": {
-    "mongodb": "^6.3.0",
     "axios": "^1.6.0",
-    "pdf-parse": "^1.1.1",
-    "pdf2pic": "^3.1.0",
-    "jimp": "^0.22.10",
-    "node-tesseract-ocr": "^2.2.0",
-    "mammoth": "^1.6.0",
-    "natural": "^6.10.0",
-    "tiktoken": "^1.0.10",
-    "dotenv": "^16.3.1",
+    "cors": "^2.8.5",
     "csv-parser": "^3.0.0",
+    "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "cors": "^2.8.5"
+    "jimp": "^0.22.10",
+    "mammoth": "^1.6.0",
+    "mongodb": "^6.3.0",
+    "natural": "^6.10.0",
+    "node-tesseract-ocr": "^2.2.0",
+    "pdf-parse": "^1.1.1",
+    "pdf2image": "^1.2.3",
+    "pdf2pic": "^3.1.0",
+    "tiktoken": "^1.0.10"
   },
-  "keywords": ["hr", "chatbot", "rag", "librechat"],
+  "keywords": [
+    "hr",
+    "chatbot",
+    "rag",
+    "librechat"
+  ],
   "author": "SAMETEI",
   "license": "MIT"
 }

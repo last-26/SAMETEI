@@ -9,9 +9,12 @@ function runPythonOCR(pdfPath, options = {}) {
     if (options.lang) env.TESSERACT_LANG = options.lang;
     if (options.dpi) env.OCR_DPI = String(options.dpi);
 
-    console.log(`[OCR] Python OCR çağrılıyor: ${pythonExec} ${scriptPath} (lang=${env.TESSERACT_LANG}, dpi=${env.OCR_DPI})`);
+    console.log(`[OCR] Türkçe Tablo OCR çağrılıyor: ${pythonExec} ${scriptPath} (lang=${env.TESSERACT_LANG}, dpi=${env.OCR_DPI})`);
 
-    const proc = spawn(pythonExec, [scriptPath, pdfPath], { env });
+    const proc = spawn(pythonExec, [scriptPath, pdfPath], { 
+      env,
+      timeout: 300000 // 5 dakika timeout
+    });
     let stdout = '';
     let stderr = '';
     proc.stdout.on('data', (d) => (stdout += d.toString()));
