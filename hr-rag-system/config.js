@@ -40,12 +40,18 @@ module.exports = {
     similarityThreshold: 0.3 // Daha düşük threshold (daha esnek eşleştirme)
   },
 
-  // OCR Ayarları - Vision Model ile güncellendi
+  // OCR Ayarları - Local Model desteği ile güncellendi
   ocr: {
-    // Ana provider: Vision Model (OpenRouter)
-    provider: 'openrouter-vision',
+    // Ana provider: Local Model öncelikli
+    provider: 'local-qwen',
     
-    // OpenRouter Vision Ayarları
+    // LOCAL MODEL AYARLARI (YENİ)
+    useLocalModel: true, // Local modeli etkinleştir
+    localModelUrl: 'http://localhost:8000', // Python API sunucu adresi
+    localModelPriority: 1, // Öncelik sırası (1 = en yüksek)
+    
+    // OpenRouter Vision Ayarları (fallback olarak)
+    preferVision: true, // Local başarısız olursa OpenRouter'ı dene
     vision: {
       model: 'qwen/qwen2.5-vl-32b-instruct:free', // En iyi performans/hız dengesi
       fallbackModels: [
@@ -60,7 +66,8 @@ module.exports = {
       timeout: 30000, // 30 saniye timeout
     },
     
-    // Eski Tesseract ayarları (fallback için)
+    // Tesseract OCR (son çare)
+    enableFallback: true,
     tesseract: {
       path: process.env.TESSERACT_PATH || 'C:\\Program Files\\Tesseract-OCR\\tesseract.exe',
       languages: process.env.TESSERACT_LANG || 'tur+eng',
@@ -84,10 +91,21 @@ module.exports = {
       }
     },
     
-    // Genel ayarlar
-    minTextThreshold: 30,
-    preferVision: true, // Vision model öncelikli
-    enableFallback: true, // Tesseract fallback aktif
+    // Genel OCR ayarları
+    minTextThreshold: 30, // PDF'de minimum metin karakteri
+    preferredOrder: ['local-qwen', 'openrouter-vision', 'tesseract'], // Deneme sırası
+  },
+
+  // Local Model için ek ayarlar
+  localModel: {
+    enabled: true,
+    autoStart: false, // Python sunucusunu otomatik başlat
+    pythonPath: 'python', // Python executable yolu
+    serverScript: './qwen_local_server.py', // Python script yolu
+    startupTimeout: 60000, // Başlangıç timeout (ms)
+    healthCheckInterval: 30000, // Sağlık kontrolü aralığı (ms)
+    maxRetries: 3,
+    retryDelay: 1000,
   },
 
   // Server Ayarları

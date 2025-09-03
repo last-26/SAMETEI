@@ -1,5 +1,11 @@
-pillow>=11
-pytesseract==0.3.10
-pdf2image==1.16.3
-opencv-python==4.8.1.78
-numpy==1.26.4
+# Qwen2.5-VL Local API Server için gerekli Python paketleri
+torch>=2.0.0
+torchvision
+transformers>=4.37.0
+pillow
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+accelerate
+qwen-vl-utils

@@ -138,3 +138,6 @@ helm/**/.values.yaml
 /.tabnine/
 /.codeium
 *.local.md
+
+# HR RAG System temp files
+hr-rag-system/temp/

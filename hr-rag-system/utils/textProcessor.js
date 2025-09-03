@@ -5,16 +5,29 @@ const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const { encoding_for_model } = require('tiktoken');
 const config = require('../config');
-// OCR import'ları - Vision Model ve Tesseract fallback
+// OCR import'ları - Local Model, Vision Model ve Tesseract fallback
 const { runPythonOCR } = require('./ocr_bridge');
 const OpenRouterVisionOCR = require('./visionOCR');
+const LocalQwenOCR = require('./localQwenOCR');
 
 class TextProcessor {
   constructor() {
     this.chunkSize = config.rag.chunkSize;
     this.chunkOverlap = config.rag.chunkOverlap;
     
-    // Vision OCR instance'ı oluştur
+    // Local Qwen OCR instance'ı oluştur
+    if (config.ocr?.useLocalModel) {
+      this.localQwenOCR = new LocalQwenOCR(config.ocr.localModelUrl || 'http://localhost:8000');
+      console.log('[TextProcessor] Local Qwen2.5-VL OCR model bağlantısı hazır');
+      
+      // Başlangıçta sağlık kontrolü yap
+      this.checkLocalModelHealth();
+    } else {
+      this.localQwenOCR = null;
+      console.log('[TextProcessor] Local Qwen OCR model devre dışı');
+    }
+    
+    // Vision OCR instance'ı oluştur (fallback olarak)
     if (config.ocr?.preferVision && config.openrouter?.apiKey) {
       this.visionOCR = new OpenRouterVisionOCR(
         config.openrouter.apiKey,
@@ -31,6 +44,20 @@ class TextProcessor {
     } catch (error) {
       console.warn('⚠️ Tiktoken encoder yüklenemedi, alternatif kullanılacak');
       this.encoder = null;
+    }
+  }
+
+  /**
+   * Local model sağlık kontrolü
+   */
+  async checkLocalModelHealth() {
+    if (this.localQwenOCR) {
+      const health = await this.localQwenOCR.checkHealth();
+      if (health.status === 'healthy') {
+        console.log('[TextProcessor] ✅ Local Qwen OCR model çalışıyor');
+      } else {
+        console.warn('[TextProcessor] ⚠️ Local Qwen OCR model hazır değil:', health);
+      }
     }
   }
 
@@ -317,7 +344,45 @@ except Exception as e:
         const needOcr = text.length < (config.ocr?.minTextThreshold || 30) || await this.isImageBasedPdf(filePath);
         
         if (needOcr) {
-          // Vision Model ile OCR dene
+          // ÖNCELİK 1: Local Qwen OCR Model
+          if (this.localQwenOCR && config.ocr?.useLocalModel) {
+            try {
+              console.log(`[Local Qwen OCR] Form analizi başlatılıyor: ${path.basename(filePath)}`);
+              
+              // PDF'i image'a çevir
+              const imagePath = await this.convertPdfToImage(filePath);
+              if (imagePath) {
+                const localResult = await this.localQwenOCR.extractFromImage(imagePath, 'form');
+                
+                if (localResult.success && localResult.text && localResult.text.length > 10) {
+                  text = localResult.text;
+                  console.log(`[Local Qwen OCR] ✅ Başarılı: ${text.length} karakter`);
+                  
+                  // Geçici image dosyasını temizle
+                  if (fs.existsSync(imagePath)) {
+                    fs.unlinkSync(imagePath);
+                  }
+                  
+                  return [{
+                    content: text.trim(),
+                    metadata: {
+                      ...metadata,
+                      source: path.basename(filePath),
+                      type: 'pdf_document',
+                      pageCount: 1,
+                      ocrProcessed: true,
+                      ocrProvider: 'local-qwen-ocr',
+                      ocrModel: 'Qwen2.5-VL-3B-Instruct'
+                    }
+                  }];
+                }
+              }
+            } catch (e) {
+              console.error(`[Local Qwen OCR] Hata, OpenRouter'a geçiliyor:`, e.message);
+            }
+          }
+          
+          // ÖNCELİK 2: OpenRouter Vision (mevcut kodunuz)
           if (this.visionOCR && config.ocr?.preferVision) {
             try {
               console.log(`[Vision OCR] Form analizi başlatılıyor: ${path.basename(filePath)}`);
@@ -364,7 +429,7 @@ except Exception as e:
             }
           }
           
-          // Tesseract fallback
+          // ÖNCELİK 3: Tesseract fallback
           if (config.ocr?.enableFallback) {
             try {
               console.log(`[Tesseract OCR] Fallback başlatılıyor: ${path.basename(filePath)}`);
@@ -411,6 +476,55 @@ except Exception as e:
           source: path.basename(filePath),
           type: 'docx_document'
         });
+      }
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'bmp': {
+        // Görüntü dosyaları için direkt OCR
+        let ocrText = '';
+        
+        // Local Qwen OCR öncelikli
+        if (this.localQwenOCR && config.ocr?.useLocalModel) {
+          const localResult = await this.localQwenOCR.extractFromImage(filePath, 'form');
+          if (localResult.success) {
+            ocrText = localResult.text;
+            console.log(`[Local Qwen OCR] Görüntü başarılı: ${ocrText.length} karakter`);
+          }
+        }
+        
+        // Başarısız olursa diğer yöntemler
+        if (!ocrText && this.visionOCR) {
+          // OpenRouter vision
+          const visionResult = await this.visionOCR.extractFromImage(filePath, 'form');
+          if (visionResult.success) {
+            ocrText = visionResult.text;
+            console.log(`[Vision OCR] Görüntü başarılı: ${ocrText.length} karakter`);
+          }
+        }
+        
+        if (!ocrText && config.ocr?.enableFallback) {
+          // Tesseract fallback
+          const tesseractResult = await runPythonOCR(filePath);
+          if (tesseractResult && tesseractResult.text) {
+            ocrText = tesseractResult.text;
+            console.log(`[Tesseract OCR] Görüntü başarılı: ${ocrText.length} karakter`);
+          }
+        }
+        
+        if (ocrText) {
+          return [{
+            content: ocrText.trim(),
+            metadata: {
+              ...metadata,
+              source: path.basename(filePath),
+              type: 'image_document',
+              ocrProcessed: true
+            }
+          }];
+        }
+        
+        throw new Error('OCR başarısız oldu');
       }
       default: {
         throw new Error(`Desteklenmeyen dosya formatı: ${extension}`);
