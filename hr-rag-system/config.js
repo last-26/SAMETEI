@@ -40,15 +40,27 @@ module.exports = {
     similarityThreshold: 0.3 // Daha düşük threshold (daha esnek eşleştirme)
   },
 
-  // OCR Ayarları - Local Model desteği ile güncellendi
+  // OCR Ayarları - DOT-OCR öncelikli, Local Model desteği ile güncellendi
   ocr: {
-    // Ana provider: Local Model öncelikli
-    provider: 'local-qwen',
-    
-    // LOCAL MODEL AYARLARI (YENİ)
-    useLocalModel: true, // Local modeli etkinleştir
-    localModelUrl: 'http://localhost:8000', // Python API sunucu adresi
-    localModelPriority: 1, // Öncelik sırası (1 = en yüksek)
+    // Ana provider: DOT-OCR öncelikli
+    provider: 'dot-ocr',
+
+    // DOT-OCR AYARLARI (YENİ - EN YÜKSEK ÖNCELİK)
+    dotOcr: {
+      enabled: true,
+      modelPath: process.env.DOT_OCR_MODEL_PATH || "C:\\Users\\samet\\Downloads\\GOT-OCR2_0",
+      pythonPath: process.env.DOT_OCR_PYTHON_PATH || 'python',
+      defaultType: 'table_text_tsv', // table_text_tsv | form | text_only | structured
+      priority: 1, // En yüksek öncelik
+      timeout: 300000, // 5 dakika timeout
+      maxRetries: 3,
+      retryDelay: 1000
+    },
+
+    // LOCAL MODEL AYARLARI (Qwen - YORUMDA - Artık kullanılmıyor)
+    // useLocalModel: true, // Local modeli etkinleştir
+    // localModelUrl: 'http://localhost:8000', // Python API sunucu adresi
+    // localModelPriority: 2, // Öncelik sırası
     
     // OpenRouter Vision Ayarları (fallback olarak)
     preferVision: true, // Local başarısız olursa OpenRouter'ı dene
@@ -93,20 +105,22 @@ module.exports = {
     
     // Genel OCR ayarları
     minTextThreshold: 30, // PDF'de minimum metin karakteri
-    preferredOrder: ['local-qwen', 'openrouter-vision', 'tesseract'], // Deneme sırası
+    preferredOrder: ['dot-ocr', 'openrouter-vision', 'tesseract'], // Deneme sırası
   },
 
-  // Local Model için ek ayarlar
-  localModel: {
-    enabled: true,
-    autoStart: false, // Python sunucusunu otomatik başlat
-    pythonPath: 'python', // Python executable yolu
-    serverScript: './qwen_local_server.py', // Python script yolu
-    startupTimeout: 60000, // Başlangıç timeout (ms)
-    healthCheckInterval: 30000, // Sağlık kontrolü aralığı (ms)
-    maxRetries: 3,
-    retryDelay: 1000,
-  },
+  // Local Model için ek ayarlar (YORUMDA - Qwen artık kullanılmıyor)
+/*
+localModel: {
+  enabled: true,
+  autoStart: false, // Python sunucusunu otomatik başlat
+  pythonPath: 'python', // Python executable yolu
+  serverScript: './qwen_local_server.py', // Python script yolu
+  startupTimeout: 60000, // Başlangıç timeout (ms)
+  healthCheckInterval: 30000, // Sağlık kontrolü aralığı (ms)
+  maxRetries: 3,
+  retryDelay: 1000,
+},
+*/
 
   // Server Ayarları
   server: {

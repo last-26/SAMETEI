@@ -9,6 +9,8 @@
 - **OpenRouter API** entegrasyonu (DeepSeek-V3)
 - **LibreChat** uyumlu API endpoint'leri
 - **Türkçe dil desteği** ve HR prosedürlerine odaklı
+- **DOT-OCR (GOT-OCR2)** entegrasyonu ile gelişmiş görüntü işleme
+- **Çoklu OCR fallback sistemi** (DOT-OCR → Local Qwen → Vision → Tesseract)
 
 ## 🚀 Hızlı Başlangıç
 
@@ -47,7 +49,31 @@ npm run ingest
 npm run test
 ```
 
-### 5. API Server'ı Başlat
+### 5. DOT-OCR Kurulumu (İsteğe bağlı)
+
+DOT-OCR (GOT-OCR2) ile gelişmiş görüntü OCR için:
+
+1. **GOT-OCR2 Modelini İndirin**:
+   ```bash
+   # Modeli indirip C:\Users\samet\Downloads\GOT-OCR2_0 klasörüne çıkarın
+   # Model dosyası yaklaşık 2GB boyutundadır
+   ```
+
+2. **Python Bağımlılıklarını Yükleyin**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **DOT-OCR'ı Test Edin**:
+   ```bash
+   # JavaScript testi
+   node dot-ocr/test_dot_ocr.js
+
+   # Python testi
+   python dot-ocr/test_dot_ocr_simple.py
+   ```
+
+### 6. API Server'ı Başlat
 
 ```bash
 npm start
@@ -133,6 +159,23 @@ services:
                        │   MongoDB        │
                        │   Vector Store   │
                        └──────────────────┘
+                                ▲
+                                │
+                    ┌───────────┴───────────┐
+                    │                       │
+          ┌─────────▼─────────┐   ┌─────────▼─────────┐
+          │   DOT-OCR        │   │   Local Qwen     │
+          │   (GOT-OCR2)     │   │   (Qwen2.5-VL)   │
+          └───────────────────┘   └───────────────────┘
+                    │                       │
+                    └───────────┬───────────┘
+                                ▼
+                    ┌───────────┴───────────┐
+                    │                       │
+          ┌─────────▼─────────┐   ┌─────────▼─────────┐
+          │   Vision OCR     │   │   Tesseract      │
+          │   (OpenRouter)   │   │   (Fallback)     │
+          └───────────────────┘   └───────────────────┘
 ```
 
 ## 📈 Performans
@@ -141,6 +184,22 @@ services:
 - **Embedding boyutu**: 1536 (OpenAI text-embedding-3-small)
 - **Desteklenen döküman sayısı**: Sınırsız
 - **Eş zamanlı sorgu**: ✅ Desteklenir
+
+### OCR Performans Karşılaştırması
+
+| OCR Yöntemi | Doğruluk | Hız | GPU | Durum |
+|-------------|----------|-----|-----|--------|
+| **DOT-OCR (GOT-OCR2)** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ✅ | **AKTİF - ANA SİSTEM** |
+| Local Qwen2.5-VL | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ✅ | ❌ DEVRE DIŞI (Backup'da) |
+| Vision OCR (API) | ⭐⭐⭐⭐ | ⭐⭐ | ❌ | Fallback |
+| Tesseract | ⭐⭐ | ⭐⭐⭐⭐⭐ | ❌ | Fallback |
+
+**📊 DOT-OCR Avantajları:**
+- Tablo yapısını mükemmel korur (TSV formatında)
+- Türkçe karakterleri hatasız tanır
+- GPU hızlandırma desteği
+- Özel prompt'lar ile özelleştirilebilir
+- **Şu anda aktif sistem**
 
 ## 🛠️ Geliştirme
 
@@ -206,6 +265,26 @@ curl -H "Authorization: Bearer YOUR_KEY" \
 - Rate limiting süresini artır
 - Daha küçük embedding modeli kullan
 
+### DOT-OCR Çalışmıyor
+```bash
+# Model yolunu kontrol et
+ls "C:\Users\samet\Downloads\GOT-OCR2_0"
+
+# Python testi çalıştır
+python dot-ocr/test_dot_ocr_simple.py
+
+# JavaScript testi çalıştır
+node dot-ocr/test_dot_ocr.js
+
+# GPU/CUDA kontrolü
+python -c "import torch; print('CUDA:', torch.cuda.is_available())"
+```
+
+### DOT-OCR Hız Sorunu
+- GPU belleği yetersizse CPU kullan
+- Görüntü boyutunu azalt (config.js)
+- Batch processing'i devre dışı bırak
+
 ## 🔒 Güvenlik
 
 - API key'ler environment variable'larda
@@ -217,8 +296,34 @@ curl -H "Authorization: Bearer YOUR_KEY" \
 
 - **Geliştirici**: SAMETEI Teknik Ekip
 - **E-posta**: dev@sametei.com
-- **Versiyon**: 1.0.0
+- **Versiyon**: 1.1.0 (DOT-OCR Entegre)
+- **DOT-OCR Model**: GOT-OCR2
 
 ---
 
-💡 **İpucu**: Sistemi production'da kullanmadan önce yeterince test edin!
+💡 **İpucu**: Sistem artık DOT-OCR (GOT-OCR2) öncelikli çalışıyor. Qwen OCR backup'da saklanıyor!
+
+## 🔄 DOT-OCR Kullanım Örnekleri
+
+### Basit Kullanım
+```javascript
+const LocalDotOCR = require('./utils/localDotOCR');
+const dotOCR = new LocalDotOCR();
+
+const result = await dotOCR.extractFromImage('path/to/image.png', 'table_text_tsv');
+console.log(result.text);
+```
+
+### Farklı Çıkarım Türleri
+```javascript
+// Tablo çıkarımı (TSV formatında)
+const tableResult = await dotOCR.extractFromImage(imagePath, 'table_text_tsv');
+
+// Form çıkarımı
+const formResult = await dotOCR.extractFromImage(imagePath, 'form');
+
+// Özel prompt ile
+const customResult = await dotOCR.extractFromImage(imagePath, 'table_text_tsv', {
+  customPrompt: 'Bu tabloyu sadece değerler olarak çıkar...'
+});
+```

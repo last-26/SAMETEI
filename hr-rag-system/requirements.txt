@@ -9,3 +9,13 @@ python-multipart
 pydantic
 accelerate
 qwen-vl-utils
+
+# DOT-OCR (GOT-OCR2) için gerekli Python paketleri
+# transformers zaten yukarıda var (4.37.0+)
+# torch zaten yukarıda var (2.0.0+)
+# pillow zaten yukarıda var
+
+# Ek OCR ve görüntü işleme kütüphaneleri
+pdf2image>=1.17.0
+opencv-python>=4.8.0
+numpy>=1.24.0

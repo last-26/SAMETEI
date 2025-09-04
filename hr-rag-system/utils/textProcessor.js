@@ -5,28 +5,42 @@ const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const { encoding_for_model } = require('tiktoken');
 const config = require('../config');
-// OCR import'ları - Local Model, Vision Model ve Tesseract fallback
+// OCR import'ları - DOT-OCR öncelikli, Vision Model ve Tesseract fallback
 const { runPythonOCR } = require('./ocr_bridge');
 const OpenRouterVisionOCR = require('./visionOCR');
-const LocalQwenOCR = require('./localQwenOCR');
+// const LocalQwenOCR = require('./localQwenOCR'); // Qwen OCR backup'da
+const LocalDotOCR = require('./localDotOCR');
 
 class TextProcessor {
   constructor() {
     this.chunkSize = config.rag.chunkSize;
     this.chunkOverlap = config.rag.chunkOverlap;
     
-    // Local Qwen OCR instance'ı oluştur
+    // Local Qwen OCR instance'ı oluştur (YORUMDA - Backup'da)
+    /*
     if (config.ocr?.useLocalModel) {
       this.localQwenOCR = new LocalQwenOCR(config.ocr.localModelUrl || 'http://localhost:8000');
       console.log('[TextProcessor] Local Qwen2.5-VL OCR model bağlantısı hazır');
-      
+
       // Başlangıçta sağlık kontrolü yap
       this.checkLocalModelHealth();
     } else {
       this.localQwenOCR = null;
       console.log('[TextProcessor] Local Qwen OCR model devre dışı');
     }
+    */
+
+    this.localQwenOCR = null; // Qwen OCR devre dışı
+    console.log('[TextProcessor] Qwen OCR devre dışı - DOT-OCR kullanılıyor');
     
+    // DOT-OCR instance'ı oluştur (yeni öncelikli OCR)
+    this.localDotOCR = new LocalDotOCR({
+      modelPath: config.ocr?.dotOcr?.modelPath || "C:\\Users\\samet\\Downloads\\GOT-OCR2_0",
+      pythonPath: config.ocr?.dotOcr?.pythonPath || 'python',
+      defaultExtractionType: config.ocr?.dotOcr?.defaultType || 'table_text_tsv'
+    });
+    console.log('[TextProcessor] DOT-OCR (GOT-OCR2) hazır');
+
     // Vision OCR instance'ı oluştur (fallback olarak)
     if (config.ocr?.preferVision && config.openrouter?.apiKey) {
       this.visionOCR = new OpenRouterVisionOCR(
@@ -48,8 +62,9 @@ class TextProcessor {
   }
 
   /**
-   * Local model sağlık kontrolü
+   * Local model sağlık kontrolü (YORUMDA - Artık kullanılmıyor)
    */
+  /*
   async checkLocalModelHealth() {
     if (this.localQwenOCR) {
       const health = await this.localQwenOCR.checkHealth();
@@ -60,6 +75,7 @@ class TextProcessor {
       }
     }
   }
+  */
 
   /**
    * Token sayısını hesapla
@@ -342,27 +358,66 @@ except Exception as e:
 
         // OCR kontrolü: metin azsa veya image-based PDF ise OCR uygula
         const needOcr = text.length < (config.ocr?.minTextThreshold || 30) || await this.isImageBasedPdf(filePath);
-        
+
         if (needOcr) {
-          // ÖNCELİK 1: Local Qwen OCR Model
+          // ÖNCELİK 1: DOT-OCR (GOT-OCR2) - YENİ
+          try {
+            console.log(`[DOT-OCR] Tablo/metin çıkarımı başlatılıyor: ${path.basename(filePath)}`);
+
+            // PDF'i image'a çevir
+            const imagePath = await this.convertPdfToImage(filePath);
+            if (imagePath) {
+              const dotResult = await this.localDotOCR.extractFromImage(imagePath, 'table_text_tsv');
+
+              if (dotResult.success && dotResult.text && dotResult.text.length > 10) {
+                text = dotResult.text;
+                console.log(`[DOT-OCR] ✅ Başarılı: ${text.length} karakter, ${dotResult.elapsedMs}ms`);
+
+                // Geçici image dosyasını temizle
+                if (fs.existsSync(imagePath)) {
+                  fs.unlinkSync(imagePath);
+                }
+
+                return [{
+                  content: text.trim(),
+                  metadata: {
+                    ...metadata,
+                    source: path.basename(filePath),
+                    type: 'pdf_document',
+                    pageCount: 1,
+                    ocrProcessed: true,
+                    ocrProvider: 'dot-ocr',
+                    ocrModel: 'GOT-OCR2',
+                    device: dotResult.device,
+                    processingTime: dotResult.processingTime
+                  }
+                }];
+              }
+            }
+          } catch (e) {
+            console.error(`[DOT-OCR] Hata, Local Qwen'e geçiliyor:`, e.message);
+          }
+
+          // ÖNCELİK 2: Local Qwen OCR Model (YORUMDA - Artık kullanılmıyor)
+          /*
           if (this.localQwenOCR && config.ocr?.useLocalModel) {
             try {
               console.log(`[Local Qwen OCR] Form analizi başlatılıyor: ${path.basename(filePath)}`);
-              
+
               // PDF'i image'a çevir
               const imagePath = await this.convertPdfToImage(filePath);
               if (imagePath) {
                 const localResult = await this.localQwenOCR.extractFromImage(imagePath, 'form');
-                
+
                 if (localResult.success && localResult.text && localResult.text.length > 10) {
                   text = localResult.text;
                   console.log(`[Local Qwen OCR] ✅ Başarılı: ${text.length} karakter`);
-                  
+
                   // Geçici image dosyasını temizle
                   if (fs.existsSync(imagePath)) {
                     fs.unlinkSync(imagePath);
                   }
-                  
+
                   return [{
                     content: text.trim(),
                     metadata: {
@@ -381,6 +436,7 @@ except Exception as e:
               console.error(`[Local Qwen OCR] Hata, OpenRouter'a geçiliyor:`, e.message);
             }
           }
+          */
           
           // ÖNCELİK 2: OpenRouter Vision (mevcut kodunuz)
           if (this.visionOCR && config.ocr?.preferVision) {
@@ -483,15 +539,28 @@ except Exception as e:
       case 'bmp': {
         // Görüntü dosyaları için direkt OCR
         let ocrText = '';
-        
-        // Local Qwen OCR öncelikli
-        if (this.localQwenOCR && config.ocr?.useLocalModel) {
+
+        // DOT-OCR öncelikli (yeni)
+        try {
+          const dotResult = await this.localDotOCR.extractFromImage(filePath, 'table_text_tsv');
+          if (dotResult.success && dotResult.text) {
+            ocrText = dotResult.text;
+            console.log(`[DOT-OCR] Görüntü başarılı: ${ocrText.length} karakter, ${dotResult.elapsedMs}ms`);
+          }
+        } catch (e) {
+          console.error(`[DOT-OCR] Görüntü hatası, Local Qwen'e geçiliyor:`, e.message);
+        }
+
+        // Local Qwen OCR (fallback) - YORUMDA
+        /*
+        if (!ocrText && this.localQwenOCR && config.ocr?.useLocalModel) {
           const localResult = await this.localQwenOCR.extractFromImage(filePath, 'form');
           if (localResult.success) {
             ocrText = localResult.text;
             console.log(`[Local Qwen OCR] Görüntü başarılı: ${ocrText.length} karakter`);
           }
         }
+        */
         
         // Başarısız olursa diğer yöntemler
         if (!ocrText && this.visionOCR) {
@@ -519,7 +588,9 @@ except Exception as e:
               ...metadata,
               source: path.basename(filePath),
               type: 'image_document',
-              ocrProcessed: true
+              ocrProcessed: true,
+              ocrProvider: 'dot-ocr', // DOT-OCR öncelikli olduğu için varsayılan
+              ocrModel: 'GOT-OCR2'
             }
           }];
         }

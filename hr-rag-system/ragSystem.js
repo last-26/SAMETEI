@@ -17,21 +17,36 @@ class HRRAGSystem {
   async initialize() {
     try {
       console.log('🚀 SAMETEI HR RAG System başlatılıyor...');
-      
+
       // MongoDB'ye bağlan
       await this.vectorDB.connect();
-      
+
       // Sistem istatistiklerini göster
       const stats = await this.vectorDB.getStats();
       console.log(`📊 Mevcut döküman sayısı: ${stats.documentCount}`);
-      
+
       if (stats.embeddingDimension) {
         console.log(`🔢 Embedding boyutu: ${stats.embeddingDimension}`);
       }
-      
+
+      // DOT-OCR durumunu kontrol et (Artık tek OCR sistemi)
+      console.log('🔍 OCR sistemi kontrol ediliyor...');
+      try {
+        const LocalDotOCR = require('./utils/localDotOCR');
+        const dotOCR = new LocalDotOCR();
+        const health = await dotOCR.checkHealth();
+        if (health.status === 'healthy') {
+          console.log('✅ DOT-OCR (GOT-OCR2) sistemi aktif ve hazır');
+        } else {
+          console.log('⚠️ DOT-OCR sistemi hazır değil, sorun gidermek gerekebilir');
+        }
+      } catch (e) {
+        console.log('❌ DOT-OCR sistemi yüklenemedi:', e.message);
+      }
+
       this.isInitialized = true;
       console.log('✅ HR RAG System hazır!');
-      
+
     } catch (error) {
       console.error('❌ Sistem başlatma hatası:', error);
       throw error;
@@ -407,7 +422,34 @@ class HRRAGSystem {
   async getSystemStats() {
     try {
       const dbStats = await this.vectorDB.getStats();
-      
+
+      // OCR sistem durumlarını kontrol et
+      let ocrStatus = {
+        dotOcr: { status: 'not_available', message: 'Yüklenmemiş' },
+        // localQwen: { status: 'disabled', message: 'Qwen OCR devre dışı' }, // Artık kullanılmıyor
+        visionOcr: { status: 'not_available', message: 'Yüklenmemiş' },
+        tesseract: { status: 'available', message: 'Fallback olarak hazır' }
+      };
+
+      // DOT-OCR durumu (Ana OCR sistemi)
+      try {
+        const LocalDotOCR = require('./utils/localDotOCR');
+        const dotOCR = new LocalDotOCR();
+        const health = await dotOCR.checkHealth();
+        ocrStatus.dotOcr = {
+          status: health.status === 'healthy' ? 'ready' : 'error',
+          message: health.message || 'Bilinmiyor',
+          config: dotOCR.getConfig()
+        };
+      } catch (e) {
+        ocrStatus.dotOcr = { status: 'error', message: e.message };
+      }
+
+      // Vision OCR durumu (Fallback)
+      if (this.textProcessor.visionOCR) {
+        ocrStatus.visionOcr = { status: 'ready', message: 'Hazır' };
+      }
+
       return {
         database: dbStats,
         config: {
@@ -419,7 +461,9 @@ class HRRAGSystem {
           embedding: config.openrouter.embeddingModel,
           chat: config.openrouter.chatModel
         },
-        status: this.isInitialized ? 'ready' : 'not_initialized'
+        ocr: ocrStatus,
+        status: this.isInitialized ? 'ready' : 'not_initialized',
+        ocrPriority: ['dot-ocr', 'vision-ocr', 'tesseract']
       };
     } catch (error) {
       console.error('❌ Stats alma hatası:', error);
