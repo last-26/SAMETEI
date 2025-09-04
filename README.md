@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="client/public/assets/logo.svg" height="160" alt="SAMETEI">
+  <img src="client/public/assets/Sametei.jpg" height="160" alt="SAMETEI">
 </p>
 
 # SAMETEI
