@@ -61,20 +61,19 @@ Qwen2.5-VL-3B-Instruct ile gelişmiş görüntü OCR için:
 2. **ENV/Config Ayarları**:
    `.env` (opsiyonel) veya ortam değişkenleri ile ayarlayın:
    ```bash
-   # Model seçimi (HF ID veya yerel yol)
+   # Model
    set QWEN_MODEL_ID=Qwen/Qwen2.5-VL-3B-Instruct
-   # veya
-   set QWEN_MODEL_PATH=C:\\Users\\samet\\.cache\\huggingface\\hub\\models--Qwen--Qwen2.5-VL-3B-Instruct
-
-   # Offline çalış (lokal dosyaları kullan)
    set QWEN_LOCAL_FILES_ONLY=1
 
    # Görüntü çözünürlük sınırları
    set OCR_MIN_PIXELS=640*28*28
    set OCR_MAX_PIXELS=1024*28*28
 
-   # 90° otomatik döndürme (isteğe bağlı, yalnızca 90°)
-   set OCR_AUTO_ROTATE_90=1
+   # Dikey yazı tespiti ve 90° döndürme
+   # off|cv|vlm|hybrid  (önerilen: hybrid)
+   set OCR_ROTATION_MODE=hybrid
+   set OCR_ROTATE_MARGIN=0.12
+   set OCR_PREPROCESS_ENABLED=1
    ```
 
 3. **Qwen OCR Sunucusunu Başlatın**:
@@ -85,10 +84,9 @@ Qwen2.5-VL-3B-Instruct ile gelişmiş görüntü OCR için:
 
 4. **Qwen OCR'ı Test Edin**:
    ```bash
-   # Resim/PDF ile test (PDF ilk sayfa otomatik PNG'ye çevrilir)
-   node test-qwen.js temp/1.png table_text_tsv
-   node test-qwen.js temp/1.png auto --output=json
-   node test-qwen.js temp/1.png table_text_markdown --headers="Ad,Soyad,T.C. No"
+   # Dikey yazı örneği için test (otomatik 90° düzeltme)
+   node test-qwen.js temp/a1.PNG auto --output=text
+   node test-qwen.js temp/a2.PNG table_text_tsv
    ```
 
 ### 6. API Server'ı Başlat

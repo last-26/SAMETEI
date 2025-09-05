@@ -1,6 +1,5 @@
 /**
  * Basit OCR testi - mevcut temp görüntüleri ile
- * Not: Qwen2.5-VL preprocessing aktif (sadece grayscale + 90° döndürme)
  */
 
 const LocalQwenVL = require('./utils/localQwenVL');
@@ -39,18 +38,6 @@ async function testOCRSimple() {
     const selectedPath = fs.existsSync(candidateInTemp) ? candidateInTemp : path.resolve(arg);
     let testImage = selectedPath;
 
-    // Basit CLI opsiyonları: --strategy=auto --output=json --headers="Ad,Soyad,T.C. No"
-    const cli = process.argv.slice(4).reduce((acc, token) => {
-      const m = token.match(/^--([^=]+)=(.*)$/);
-      if (m) acc[m[1]] = m[2];
-      return acc;
-    }, {});
-    const options = {
-      strategy: cli.strategy,
-      output: cli.output,
-      headers: cli.headers ? String(cli.headers).split(',').map(s => s.trim()).filter(Boolean) : undefined,
-    };
-
     // Eğer PDF verildiyse önce ilk sayfayı PNG'ye çevir
     if (isPdf) {
       console.log('\n📄 PDF tespit edildi, ilk sayfa PNG\'ye çevriliyor...');
@@ -75,7 +62,7 @@ import sys\nfrom pdf2image import convert_from_path\n\ntry:\n    images = conver
     
     // 4. OCR testi
     console.log(`\n4️⃣ OCR testi yapılıyor... (prompt: ${promptType})`);
-    const ocrResult = await localQwenVL.extractFromImage(testImage, promptType, null, options);
+    const ocrResult = await localQwenVL.extractFromImage(testImage, promptType);
     
     if (ocrResult.success) {
       console.log('✅ OCR başarılı!');

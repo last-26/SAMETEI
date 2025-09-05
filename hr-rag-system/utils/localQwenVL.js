@@ -55,6 +55,7 @@ class LocalQwenVL {
             ...(map.strategy ? { strategy: map.strategy } : {}),
             ...(map.output ? { output: map.output } : {}),
             ...(map.headers ? { headers: map.headers } : {}),
+            ...(typeof map.includeNotes === 'boolean' ? { include_notes: map.includeNotes } : {}),
           },
           {
             timeout: 0,
@@ -159,13 +160,16 @@ class LocalQwenVL {
       strategy: 'text',
       output: 'text',
       headers: options.headers || undefined,
+      includeNotes: undefined,
     };
     if (normalized.startsWith('table_text')) {
       preset.strategy = 'table';
       preset.output = 'text';
+      if (normalized.includes('with_notes')) preset.includeNotes = true;
     } else if (normalized.includes('markdown')) {
       preset.strategy = 'table';
       preset.output = 'markdown';
+      if (normalized.includes('with_notes')) preset.includeNotes = true;
     } else if (normalized === 'form' || normalized.includes('key_value')) {
       preset.strategy = 'form';
       preset.output = options.output || 'json';
@@ -176,6 +180,7 @@ class LocalQwenVL {
     // Çağıranın override etmesine izin ver
     if (options.strategy) preset.strategy = options.strategy;
     if (options.output) preset.output = options.output;
+    if (typeof options.includeNotes === 'boolean') preset.includeNotes = options.includeNotes;
     return preset;
   }
 
