@@ -238,11 +238,36 @@ def keep_only_table_section(text: str, output_mode: str) -> str:
         return ""
     om = (output_mode or "text").lower()
     if om == "text":
-        # TSV bekleniyor: en az bir TAB içeren satırlar kalsın
-        kept = [ln for ln in t.splitlines() if "\t" in ln]
-        # Tablo dışı tek-sütun başlıkları (ör. Form No.) ele
-        kept = [ln for ln in kept if ln.count("\t") >= 1]
-        return "\n".join(kept).strip()
+        # TSV bekleniyor: önce gerçek TAB var mı bak
+        lines = [ln.rstrip() for ln in t.splitlines() if ln.strip()]
+        has_tab = any("\t" in ln for ln in lines)
+        if has_tab:
+            kept = [ln for ln in lines if "\t" in ln]
+            # En az 2 kolon olsun
+            kept = [ln for ln in kept if ln.count("\t") >= 1]
+            return "\n".join(kept).strip()
+        # TAB yoksa 2+ boşlukla ayrılmış kolonları TSV'ye dönüştür
+        # Kolon sayısını başlığa bakarak kilitle
+        space_split = []
+        for ln in lines:
+            cells = [c.strip() for c in re.split(r"\s{2,}", ln) if c.strip()]
+            if len(cells) >= 2:
+                space_split.append(cells)
+        if not space_split:
+            return ""
+        col_count = max(len(c) for c in space_split)
+        normalized = []
+        for cells in space_split:
+            if len(cells) < 2:
+                continue
+            # Kolon sayısını sabitle
+            if len(cells) < col_count:
+                cells = cells + [""] * (col_count - len(cells))
+            elif len(cells) > col_count:
+                # Aşan hücreleri son kolona birleştir
+                cells = cells[:col_count-1] + [" ".join(cells[col_count-1:])]
+            normalized.append("\t".join(cells))
+        return "\n".join(normalized).strip()
     if om == "markdown":
         # GitHub markdown tablosu deseni
         if re.search(r"^\|.*\|\n\|[\-:| ]+\|", t):
@@ -256,6 +281,7 @@ def keep_only_table_section(text: str, output_mode: str) -> str:
     return t
 
 # --- JSON-first table extraction helpers ---
+# (Aşağıdaki JSON-first metotları include_notes=true iken kullanılacak.)
 def extract_table_json_text(pil_img: Image.Image) -> str:
     prompt = (
         "Extract ONLY the grid table as a JSON array of row objects. "
@@ -272,6 +298,24 @@ def extract_table_json_text(pil_img: Image.Image) -> str:
         }
     ]
     raw = run_model_with_messages(messages, max_new_tokens=get_env_int("OCR_TABLE_MAXTOK", 1024))
+    return remove_placeholders(raw or "").strip()
+
+# Sıkı TSV promptu (tek PASS için)
+def extract_table_strict_tsv_text(pil_img: Image.Image) -> str:
+    strict_tsv_prompt = (
+        "Return ONLY the table as TSV. Use TAB (\\t) between columns and one row per line. "
+        "Start with header row. Do NOT output any explanations, labels, or notes. TSV only."
+    )
+    msgs = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": strict_tsv_prompt},
+                {"type": "image", "image": pil_img},
+            ],
+        }
+    ]
+    raw = run_model_with_messages(msgs, max_new_tokens=get_env_int("OCR_TABLE_MAXTOK", 1024))
     return remove_placeholders(raw or "").strip()
 
 def json_to_tsv(json_text: str) -> str:
@@ -877,47 +921,38 @@ async def extract_text_from_image(request: OCRRequest):
 
         # include_notes ise ön metin + boş satır + tablo/çıktı şeklinde birleştir
         if strategy == "table":
-            # 1) JSON-first tablo çıkarımı
-            json_text = extract_table_json_text(image)
             table_only = ""
-            if json_text and (output_mode == "json"):
-                table_only = keep_only_table_section(json_text, "json")
-            elif json_text:
-                # JSON'u istenen formata dönüştür
-                if output_mode == "text":
-                    table_only = json_to_tsv(json_text)
-                elif output_mode == "markdown":
-                    # Basit TSV -> Markdown çeviri
-                    tsv = json_to_tsv(json_text)
-                    if tsv:
-                        lines = tsv.splitlines()
-                        hdr = [c.strip() for c in lines[0].split("\t")]
-                        md = "| " + " | ".join(hdr) + " |\n" + "| " + " | ".join(["---"]) * len(hdr) + " |\n"
-                        for ln in lines[1:]:
-                            cols = [c.strip() for c in ln.split("\t")]
-                            md += "| " + " | ".join(cols) + " |\n"
-                        table_only = md.strip()
-            # 2) JSON başarısız ise mevcut TSV yoluna düş
-            if not table_only:
-                table_only = keep_only_table_section(processed, output_mode)
-            # Eğer tablo üretilemediyse, daha da sıkı bir TSV promptu ile tekrar dene
-            if not table_only:
-                strict_tsv_prompt = (
-                    "Return ONLY the table as TSV. Use TAB (\t) between columns and one row per line. "
-                    "Start with header row. Do NOT output any explanations, labels, or notes. TSV only."
-                )
-                strict_msgs = [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": strict_tsv_prompt},
-                            {"type": "image", "image": image},
-                        ],
-                    }
-                ]
-                strict_raw = run_model_with_messages(strict_msgs, max_new_tokens=get_env_int("OCR_TABLE_MAXTOK", 1024))
-                strict_raw = remove_placeholders(strict_raw)
+            if request.include_notes:
+                # JSON-first (daha iyi hizalama) → istenen formata çevir
+                json_text = extract_table_json_text(image)
+                if json_text and (output_mode == "json"):
+                    table_only = keep_only_table_section(json_text, "json")
+                elif json_text:
+                    if output_mode == "text":
+                        table_only = json_to_tsv(json_text)
+                    elif output_mode == "markdown":
+                        tsv = json_to_tsv(json_text)
+                        if tsv:
+                            lines = tsv.splitlines()
+                            hdr = [c.strip() for c in lines[0].split("\t")]
+                            md = "| " + " | ".join(hdr) + " |\n" + "| " + " | ".join(["---"]) * len(hdr) + " |\n"
+                            for ln in lines[1:]:
+                                cols = [c.strip() for c in ln.split("\t")]
+                                md += "| " + " | ".join(cols) + " |\n"
+                            table_only = md.strip()
+                if not table_only:
+                    # JSON başarısızsa: işlemeden dönen metinden ayıkla
+                    table_only = keep_only_table_section(processed, output_mode)
+                if not table_only:
+                    strict_raw = extract_table_strict_tsv_text(image)
+                    table_only = keep_only_table_section(strict_raw, output_mode)
+            else:
+                # Not istenmiyorsa en hızlı yol: tek PASS sıkı TSV → ayıkla
+                strict_raw = extract_table_strict_tsv_text(image)
                 table_only = keep_only_table_section(strict_raw, output_mode)
+                if not table_only:
+                    # Yedek: işlenmiş metinden ayıkla (bazı modeller boş bırakabiliyor)
+                    table_only = keep_only_table_section(processed, output_mode)
             # Header yoksa başlığı küçük bir sorgu ile al ve ekle
             def ensure_tsv_header(table_tsv: str) -> str:
                 if not table_tsv:
