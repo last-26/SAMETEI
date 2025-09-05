@@ -55,7 +55,7 @@ class OCRRequest(BaseModel):
     # Yerleşimi koru: satır sonlarını ve görsel sırayı mümkün olduğunca koru
     preserve_layout: bool = True
     # Tablo dışında kalan tüm metni de dahil et (table modunda notlar)
-    include_notes: bool = True
+    include_notes: bool = False
 
 class OCRResponse(BaseModel):
     success: bool
@@ -254,6 +254,50 @@ def keep_only_table_section(text: str, output_mode: str) -> str:
             return t
         return ""
     return t
+
+# --- JSON-first table extraction helpers ---
+def extract_table_json_text(pil_img: Image.Image) -> str:
+    prompt = (
+        "Extract ONLY the grid table as a JSON array of row objects. "
+        "Keys must be the column headers in reading order. "
+        "Join multi-line cells with '; '. Return ONLY JSON without code fences or explanations."
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image", "image": pil_img},
+            ],
+        }
+    ]
+    raw = run_model_with_messages(messages, max_new_tokens=get_env_int("OCR_TABLE_MAXTOK", 1024))
+    return remove_placeholders(raw or "").strip()
+
+def json_to_tsv(json_text: str) -> str:
+    try:
+        data = json.loads(json_text)
+        if isinstance(data, dict):
+            # tek satır da olsa diziye sar
+            data = [data]
+        if not isinstance(data, list) or not data:
+            return ""
+        # Sütun başlıklarını ilk satırın anahtar sırasından al
+        first = data[0]
+        if not isinstance(first, dict):
+            return ""
+        headers = list(first.keys())
+        def stringify(v):
+            if v is None:
+                return ""
+            return str(v).replace("\n", " ").strip()
+        rows = ["\t".join(headers)]
+        for row in data:
+            line = [stringify(row.get(h, "")) for h in headers]
+            rows.append("\t".join(line))
+        return "\n".join(rows).strip()
+    except Exception:
+        return ""
 
 # --- Rotation helpers ---
 def _pil_to_cv_gray(img: Image.Image):
@@ -833,8 +877,29 @@ async def extract_text_from_image(request: OCRRequest):
 
         # include_notes ise ön metin + boş satır + tablo/çıktı şeklinde birleştir
         if strategy == "table":
-            # İkinci PASS'tan sadece tabloyu bırak
-            table_only = keep_only_table_section(processed, output_mode)
+            # 1) JSON-first tablo çıkarımı
+            json_text = extract_table_json_text(image)
+            table_only = ""
+            if json_text and (output_mode == "json"):
+                table_only = keep_only_table_section(json_text, "json")
+            elif json_text:
+                # JSON'u istenen formata dönüştür
+                if output_mode == "text":
+                    table_only = json_to_tsv(json_text)
+                elif output_mode == "markdown":
+                    # Basit TSV -> Markdown çeviri
+                    tsv = json_to_tsv(json_text)
+                    if tsv:
+                        lines = tsv.splitlines()
+                        hdr = [c.strip() for c in lines[0].split("\t")]
+                        md = "| " + " | ".join(hdr) + " |\n" + "| " + " | ".join(["---"]) * len(hdr) + " |\n"
+                        for ln in lines[1:]:
+                            cols = [c.strip() for c in ln.split("\t")]
+                            md += "| " + " | ".join(cols) + " |\n"
+                        table_only = md.strip()
+            # 2) JSON başarısız ise mevcut TSV yoluna düş
+            if not table_only:
+                table_only = keep_only_table_section(processed, output_mode)
             # Eğer tablo üretilemediyse, daha da sıkı bir TSV promptu ile tekrar dene
             if not table_only:
                 strict_tsv_prompt = (
@@ -880,22 +945,18 @@ async def extract_text_from_image(request: OCRRequest):
                 return table_tsv
             if output_mode == "text" and table_only:
                 table_only = ensure_tsv_header(table_only)
-            if request.include_notes:
-                head = (notes_text or "").strip()
-                if head and table_only:
-                    table_only = remove_lines_if_present(
-                        table_only,
-                        head,
-                        extra_labels=["Okuma Test Tablosu", "Table", "Tablo", "Header"]
-                    )
-                    processed = head + "\n\n" + table_only
-                elif head and not table_only:
-                    processed = head
-                else:
-                    processed = table_only or processed
-            else:
-                # Not eklenmeyecekse direkt tablo-only bırak
+            # Not istenmiyorsa final çıktı sadece tablo olsun
+            if not request.include_notes:
                 processed = table_only or processed
+            else:
+                # Notlar varsa artık TABLODAN SONRA yaz
+                head = (notes_text or "").strip()
+                if table_only and head:
+                    processed = table_only + "\n\n" + head
+                elif table_only:
+                    processed = table_only
+                else:
+                    processed = head or processed
 
         if output_mode == "json":
             try:
