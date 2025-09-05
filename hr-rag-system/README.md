@@ -9,8 +9,8 @@
 - **OpenRouter API** entegrasyonu (DeepSeek-V3)
 - **LibreChat** uyumlu API endpoint'leri
 - **Türkçe dil desteği** ve HR prosedürlerine odaklı
-- **DOT-OCR (GOT-OCR2)** entegrasyonu ile gelişmiş görüntü işleme
-- **Çoklu OCR fallback sistemi** (DOT-OCR → Local Qwen → Vision → Tesseract)
+- **Qwen2.5-VL-3B-Instruct** entegrasyonu ile gelişmiş görüntü işleme
+- **Çoklu OCR fallback sistemi** (Qwen2.5-VL → OpenRouter Vision → Tesseract)
 
 ## 🚀 Hızlı Başlangıç
 
@@ -49,28 +49,33 @@ npm run ingest
 npm run test
 ```
 
-### 5. DOT-OCR Kurulumu (İsteğe bağlı)
+### 5. Qwen2.5-VL Kurulumu
 
-DOT-OCR (GOT-OCR2) ile gelişmiş görüntü OCR için:
+Qwen2.5-VL-3B-Instruct ile gelişmiş görüntü OCR için:
 
-1. **GOT-OCR2 Modelini İndirin**:
+1. **Qwen2.5-VL-3B Modelini İndirin**:
    ```bash
-   # Modeli indirip C:\Users\samet\Downloads\GOT-OCR2_0 klasörüne çıkarın
-   # Model dosyası yaklaşık 2GB boyutundadır
+   # Hugging Face'den modeli indirin (otomatik olarak yapılır)
+   # Model dosyası yaklaşık 6GB boyutundadır
    ```
 
 2. **Python Bağımlılıklarını Yükleyin**:
    ```bash
    pip install -r requirements.txt
+   pip install git+https://github.com/huggingface/transformers accelerate
+   pip install qwen-vl-utils[decord]==0.0.8
    ```
 
-3. **DOT-OCR'ı Test Edin**:
+3. **Qwen OCR Sunucusunu Başlatın**:
+   ```bash
+   # Python OCR sunucusunu başlatın (arka planda çalıştırın)
+   python qwen_ocr_server.py
+   ```
+
+4. **Qwen OCR'ı Test Edin**:
    ```bash
    # JavaScript testi
-   node dot-ocr/test_dot_ocr.js
-
-   # Python testi
-   python dot-ocr/test_dot_ocr_simple.py
+   node qwen-ocr-backup/test_ocr_simple.js
    ```
 
 ### 6. API Server'ı Başlat
@@ -164,8 +169,8 @@ services:
                     ┌───────────┴───────────┐
                     │                       │
           ┌─────────▼─────────┐   ┌─────────▼─────────┐
-          │   DOT-OCR        │   │   Local Qwen     │
-          │   (GOT-OCR2)     │   │   (Qwen2.5-VL)   │
+                              │   Qwen2.5-VL     │   │   OpenRouter      │
+          │   (Local)        │   │   Vision OCR      │
           └───────────────────┘   └───────────────────┘
                     │                       │
                     └───────────┬───────────┘
@@ -173,8 +178,8 @@ services:
                     ┌───────────┴───────────┐
                     │                       │
           ┌─────────▼─────────┐   ┌─────────▼─────────┐
-          │   Vision OCR     │   │   Tesseract      │
-          │   (OpenRouter)   │   │   (Fallback)     │
+          │   DOT-OCR        │   │   Tesseract      │
+          │   (Backup)       │   │   (Fallback)     │
           └───────────────────┘   └───────────────────┘
 ```
 
@@ -189,16 +194,16 @@ services:
 
 | OCR Yöntemi | Doğruluk | Hız | GPU | Durum |
 |-------------|----------|-----|-----|--------|
-| **DOT-OCR (GOT-OCR2)** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ✅ | **AKTİF - ANA SİSTEM** |
-| Local Qwen2.5-VL | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ✅ | ❌ DEVRE DIŞI (Backup'da) |
-| Vision OCR (API) | ⭐⭐⭐⭐ | ⭐⭐ | ❌ | Fallback |
+| **Qwen2.5-VL-3B** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ✅ | **AKTİF - ANA SİSTEM** |
+| OpenRouter Vision | ⭐⭐⭐⭐ | ⭐⭐ | ❌ | Fallback |
+| DOT-OCR (GOT-OCR2) | ⭐⭐⭐⭐ | ⭐⭐⭐ | ✅ | Backup'da |
 | Tesseract | ⭐⭐ | ⭐⭐⭐⭐⭐ | ❌ | Fallback |
 
-**📊 DOT-OCR Avantajları:**
-- Tablo yapısını mükemmel korur (TSV formatında)
-- Türkçe karakterleri hatasız tanır
-- GPU hızlandırma desteği
-- Özel prompt'lar ile özelleştirilebilir
+**📊 Qwen2.5-VL Avantajları:**
+- Görsel anlayışı çok güçlü (tablolar, grafikler, formlar)
+- Türkçe karakterleri mükemmel tanır
+- Çoklu çıktı formatı (text, markdown, JSON)
+- Auto-döküman sınıflandırma
 - **Şu anda aktif sistem**
 
 ## 🛠️ Geliştirme
@@ -265,25 +270,25 @@ curl -H "Authorization: Bearer YOUR_KEY" \
 - Rate limiting süresini artır
 - Daha küçük embedding modeli kullan
 
-### DOT-OCR Çalışmıyor
+### Qwen2.5-VL Çalışmıyor
 ```bash
 # Model yolunu kontrol et
-ls "C:\Users\samet\Downloads\GOT-OCR2_0"
+ls "C:\Users\samet\.cache\huggingface\hub\models--Qwen--Qwen2.5-VL-3B-Instruct"
 
-# Python testi çalıştır
-python dot-ocr/test_dot_ocr_simple.py
+# Python sunucusunu kontrol et
+python qwen_ocr_server.py
 
 # JavaScript testi çalıştır
-node dot-ocr/test_dot_ocr.js
+node qwen-ocr-backup/test_ocr_simple.js
 
 # GPU/CUDA kontrolü
 python -c "import torch; print('CUDA:', torch.cuda.is_available())"
 ```
 
-### DOT-OCR Hız Sorunu
+### Qwen2.5-VL Hız Sorunu
 - GPU belleği yetersizse CPU kullan
 - Görüntü boyutunu azalt (config.js)
-- Batch processing'i devre dışı bırak
+- min_pixels/max_pixels ayarlarını düşür
 
 ## 🔒 Güvenlik
 
@@ -301,29 +306,29 @@ python -c "import torch; print('CUDA:', torch.cuda.is_available())"
 
 ---
 
-💡 **İpucu**: Sistem artık DOT-OCR (GOT-OCR2) öncelikli çalışıyor. Qwen OCR backup'da saklanıyor!
+💡 **İpucu**: Sistem artık Qwen2.5-VL-3B-Instruct öncelikli çalışıyor. DOT-OCR backup'da saklanıyor!
 
-## 🔄 DOT-OCR Kullanım Örnekleri
+## 🔄 Qwen2.5-VL Kullanım Örnekleri
 
 ### Basit Kullanım
 ```javascript
-const LocalDotOCR = require('./utils/localDotOCR');
-const dotOCR = new LocalDotOCR();
+const LocalQwenVL = require('./utils/localQwenVL');
+const qwenVL = new LocalQwenVL();
 
-const result = await dotOCR.extractFromImage('path/to/image.png', 'table_text_tsv');
+const result = await qwenVL.extractFromImage('path/to/image.png', 'table_text_tsv');
 console.log(result.text);
 ```
 
 ### Farklı Çıkarım Türleri
 ```javascript
 // Tablo çıkarımı (TSV formatında)
-const tableResult = await dotOCR.extractFromImage(imagePath, 'table_text_tsv');
+const tableResult = await qwenVL.extractFromImage(imagePath, 'table_text_tsv');
 
 // Form çıkarımı
-const formResult = await dotOCR.extractFromImage(imagePath, 'form');
+const formResult = await qwenVL.extractFromImage(imagePath, 'form');
 
 // Özel prompt ile
-const customResult = await dotOCR.extractFromImage(imagePath, 'table_text_tsv', {
+const customResult = await qwenVL.extractFromImage(imagePath, 'table_text_tsv', {
   customPrompt: 'Bu tabloyu sadece değerler olarak çıkar...'
 });
 ```

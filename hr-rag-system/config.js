@@ -40,27 +40,36 @@ module.exports = {
     similarityThreshold: 0.3 // Daha düşük threshold (daha esnek eşleştirme)
   },
 
-  // OCR Ayarları - DOT-OCR öncelikli, Local Model desteği ile güncellendi
+  // OCR Ayarları - Qwen2.5-VL öncelikli (DOT-OCR backup'da)
   ocr: {
-    // Ana provider: DOT-OCR öncelikli
-    provider: 'dot-ocr',
+    // Ana provider: Qwen2.5-VL öncelikli
+    provider: 'qwen2.5-vl',
 
-    // DOT-OCR AYARLARI (YENİ - EN YÜKSEK ÖNCELİK)
-    dotOcr: {
+    // QWEN2.5-VL AYARLARI (YENİ - EN YÜKSEK ÖNCELİK)
+    qwenVL: {
       enabled: true,
-      modelPath: process.env.DOT_OCR_MODEL_PATH || "C:\\Users\\samet\\Downloads\\GOT-OCR2_0",
-      pythonPath: process.env.DOT_OCR_PYTHON_PATH || 'python',
-      defaultType: 'table_text_tsv', // table_text_tsv | form | text_only | structured
+      modelName: 'Qwen/Qwen2.5-VL-3B-Instruct',
+      pythonPath: process.env.QWEN_PYTHON_PATH || 'python',
+      defaultType: 'text', // text | table | form
       priority: 1, // En yüksek öncelik
-      timeout: 300000, // 5 dakika timeout
+      timeout: 180000, // 3 dakika timeout
       maxRetries: 3,
-      retryDelay: 1000
+      retryDelay: 1000,
+      minPixels: 256 * 28 * 28,
+      maxPixels: 1280 * 28 * 28
     },
 
-    // LOCAL MODEL AYARLARI (Qwen - YORUMDA - Artık kullanılmıyor)
-    // useLocalModel: true, // Local modeli etkinleştir
-    // localModelUrl: 'http://localhost:8000', // Python API sunucu adresi
-    // localModelPriority: 2, // Öncelik sırası
+    // DOT-OCR AYARLARI (BACKUP - Artık kullanılmıyor)
+    // dotOcr: {
+    //   enabled: false, // Backup'da
+    //   modelPath: process.env.DOT_OCR_MODEL_PATH || "C:\\Users\\samet\\Downloads\\GOT-OCR2_0",
+    //   pythonPath: process.env.DOT_OCR_PYTHON_PATH || 'python',
+    //   defaultType: 'table_text_tsv',
+    //   priority: 2, // Backup öncelik
+    //   timeout: 300000,
+    //   maxRetries: 3,
+    //   retryDelay: 1000
+    // },
     
     // OpenRouter Vision Ayarları (fallback olarak)
     preferVision: true, // Local başarısız olursa OpenRouter'ı dene
@@ -105,7 +114,7 @@ module.exports = {
     
     // Genel OCR ayarları
     minTextThreshold: 30, // PDF'de minimum metin karakteri
-    preferredOrder: ['dot-ocr', 'openrouter-vision', 'tesseract'], // Deneme sırası
+    preferredOrder: ['qwen2.5-vl', 'openrouter-vision', 'tesseract'], // Deneme sırası
   },
 
   // Local Model için ek ayarlar (YORUMDA - Qwen artık kullanılmıyor)

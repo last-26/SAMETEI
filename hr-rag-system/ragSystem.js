@@ -29,19 +29,19 @@ class HRRAGSystem {
         console.log(`🔢 Embedding boyutu: ${stats.embeddingDimension}`);
       }
 
-      // DOT-OCR durumunu kontrol et (Artık tek OCR sistemi)
+      // Qwen2.5-VL durumunu kontrol et (Yeni ana OCR sistemi)
       console.log('🔍 OCR sistemi kontrol ediliyor...');
       try {
-        const LocalDotOCR = require('./utils/localDotOCR');
-        const dotOCR = new LocalDotOCR();
-        const health = await dotOCR.checkHealth();
+        const LocalQwenVL = require('./utils/localQwenVL');
+        const qwenVL = new LocalQwenVL();
+        const health = await qwenVL.checkHealth();
         if (health.status === 'healthy') {
-          console.log('✅ DOT-OCR (GOT-OCR2) sistemi aktif ve hazır');
+          console.log('✅ Qwen2.5-VL sistemi aktif ve hazır');
         } else {
-          console.log('⚠️ DOT-OCR sistemi hazır değil, sorun gidermek gerekebilir');
+          console.log('⚠️ Qwen2.5-VL sistemi hazır değil, sorun gidermek gerekebilir');
         }
       } catch (e) {
-        console.log('❌ DOT-OCR sistemi yüklenemedi:', e.message);
+        console.log('❌ Qwen2.5-VL sistemi yüklenemedi:', e.message);
       }
 
       this.isInitialized = true;

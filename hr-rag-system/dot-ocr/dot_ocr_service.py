@@ -59,10 +59,10 @@ class DotOCRService:
                 device_map=self.device
             ).eval()
 
-            # Generation config ayarları - Timeout kaldırıldı
+            # Generation config ayarları - Kısa metinler için optimize edildi
             if hasattr(self.model, 'generation_config') and self.model.generation_config is not None:
                 self.model.generation_config.use_cache = False
-                # self.model.generation_config.max_new_tokens = 1024  # Kaldırıldı - sınırsız
+                self.model.generation_config.max_new_tokens = 200  # Kısa metinler için sınırlandırıldı
                 self.model.generation_config.temperature = 0.0
                 self.model.generation_config.do_sample = False
                 self.model.generation_config.repetition_penalty = 1.0
@@ -128,25 +128,29 @@ class DotOCRService:
             return image_path
 
     def _get_extraction_prompt(self, extraction_type='table_text_tsv'):
-        """Basitleştirilmiş prompt - doğal metin çıkarımı"""
+        """Güçlü prompt - kelime bölünmesi önleme"""
         base_prompt = (
-            "Bu görüntüdeki TÜM metinleri oku ve çıkar. "
-            "Tablolar, formlar, dikey yazılmış metinler varsa hepsini oku ama kelimeleri ASLA harflere bölme. "
-            "Dikey sütunlar varsa sütun-sütun oku fakat kelimeleri bölmeden ve satır sonlarında kelimeleri parçalama. "
-            "Renkli arka planlı metinleri de ihmal etme. "
-            "Gri veya farklı tonlardaki metinleri de oku. "
-            "Metni doğal, okunabilir ve kelime sınırları korunmuş şekilde çıkar. "
-            "Hiçbir metni atlama."
+            "KRİTİK ÖNEM: Bu görüntüdeki TÜM metinleri TAM KELİMELER halinde oku! "
+            "ASLA harf harf parçalama yapma - kelimeleri bölme! "
+            "DİKEY METİNLERİ (90° döndürülmüş) sütun sütun oku, tam kelimeler halinde yakala! "
+            "YATAY metinleri normal oku, tüm metinleri eksiksiz yakala! "
+            "Görüntüdeki TÜM METİNLERİ tespit et, hiçbirini atlama! "
+            "Her metin bloğunu ayrı satırda döndür. "
+            "Türkçe karakterleri doğru oku: İ, Ş, Ğ, Ü, Ö, Ç "
+            "Farklı font'larda yazılmış metinleri de oku! "
+            "Soluk veya küçük metinleri de tespit et!"
         )
 
         if extraction_type == 'table_text_tsv':
-            return base_prompt + " Tablo yapısını mantıklı şekilde koru."
+            return base_prompt + " TABLO'yu şu formatta çıkar: Her SATIR eşit sayıda HÜCRE içersin, hücreler TAB (\\t) ile ayrılsın, satırlar NEW LINE (\\n) ile bitsin. Tablo yapısını tam olarak koru."
         elif extraction_type == 'form':
             return base_prompt + " Form alanlarını ve değerlerini açık şekilde belirt."
         elif extraction_type == 'text_only':
             return base_prompt + (
                 " Her metin BLOĞUNU ayrı satırda döndür. "
-                "Bir blok içindeki kelimeleri birleştir ama farklı bölgeler birbirine yapışmasın."
+                "Bir blok içindeki kelimeleri birleştir ama farklı bölgeler birbirine yapışmasın. "
+                "DIKEY METINLERİ (90° döndürülmüş) özellikle dikkatlice oku: "
+                "DİKEY METİNLERİ tam kelime olarak oku - bölme!"
             )
         else:
             return base_prompt

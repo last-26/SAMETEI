@@ -2,20 +2,20 @@
  * Basit OCR testi - mevcut temp görüntüleri ile
  */
 
-const LocalQwenOCR = require('./utils/localQwenOCR');
+const LocalQwenVL = require('../utils/localQwenVL');
 const fs = require('fs');
 const path = require('path');
 
 async function testOCRSimple() {
   console.log('🚀 Basit OCR testi başlatılıyor...\n');
   
-  // Local Qwen OCR instance'ı oluştur
-  const localQwenOCR = new LocalQwenOCR('http://localhost:8000');
-  
+  // Local Qwen VL instance'ı oluştur
+  const localQwenVL = new LocalQwenVL('http://localhost:8000');
+
   try {
     // 1. Sağlık kontrolü
     console.log('1️⃣ Sağlık kontrolü yapılıyor...');
-    const health = await localQwenOCR.checkHealth();
+    const health = await localQwenVL.checkHealth();
     console.log('Sağlık durumu:', health);
     
     if (health.status !== 'healthy') {
@@ -29,7 +29,7 @@ async function testOCRSimple() {
     const tempDir = path.join(__dirname, 'temp');
     const arg = process.argv[2];
     if (!arg) {
-      console.log('❌ Kullanım: node hr-rag-system/test_ocr_simple.js <dosyaAdı.pdf|png|jpg>');
+      console.log('❌ Kullanım: node qwen-ocr-backup/test_ocr_simple.js <dosyaAdı.pdf|png|jpg>');
       return;
     }
     const promptType = process.argv[3] || 'table_text_with_notes';
@@ -62,7 +62,7 @@ import sys\nfrom pdf2image import convert_from_path\n\ntry:\n    images = conver
     
     // 4. OCR testi
     console.log(`\n4️⃣ OCR testi yapılıyor... (prompt: ${promptType})`);
-    const ocrResult = await localQwenOCR.extractFromImage(testImage, promptType);
+    const ocrResult = await localQwenVL.extractFromImage(testImage, promptType);
     
     if (ocrResult.success) {
       console.log('✅ OCR başarılı!');
