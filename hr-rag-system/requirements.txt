@@ -1,18 +1,18 @@
 # Qwen2.5-VL Local API Server için gerekli Python paketleri
-torch>=2.0.0
-torchvision
-transformers>=4.37.0
-pillow
-fastapi
-uvicorn[standard]
-python-multipart
-pydantic
-accelerate
-qwen-vl-utils
+torch>=2.1.0
+torchvision>=0.16.0
+transformers>=4.41.0
+pillow>=10.0.0
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+pydantic>=2.6.0
+accelerate>=0.28.0
+qwen-vl-utils[decord]>=0.0.8
 
 # DOT-OCR (GOT-OCR2) için gerekli Python paketleri
-# transformers zaten yukarıda var (4.37.0+)
-# torch zaten yukarıda var (2.0.0+)
+# transformers zaten yukarıda var (4.41.0+)
+# torch zaten yukarıda var (2.1.0+)
 # pillow zaten yukarıda var
 
 # Ek OCR ve görüntü işleme kütüphaneleri

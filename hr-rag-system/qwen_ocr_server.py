@@ -59,16 +59,27 @@ class OCRResponse(BaseModel):
 model = None
 processor = None
 device = None
+model_id_loaded = None
+
+def strtobool(value: str, default: bool = False) -> bool:
+    try:
+        return str(value).strip().lower() in ("1", "true", "yes", "y", "on")
+    except Exception:
+        return default
 
 def load_model():
     """Modeli yükle"""
     global model, processor, device
 
-    # Model yolu
-    model_path = r"C:\Users\samet\.cache\huggingface\hub\models--Qwen--Qwen2.5-VL-3B-Instruct\snapshots\66285546d2b821cf421d4f5eb2576359d3770cd3"
+    # Model kimliği/yolu ENV ile yapılandırılabilir
+    # Öncelik: QWEN_MODEL_PATH (tam dosya yolu) > QWEN_MODEL_ID (HF id)
+    env_model_path = os.getenv("QWEN_MODEL_PATH", "").strip()
+    env_model_id = os.getenv("QWEN_MODEL_ID", "Qwen/Qwen2.5-VL-3B-Instruct").strip()
+    local_files_only = strtobool(os.getenv("QWEN_LOCAL_FILES_ONLY", "1"), default=True)
+    model_source = env_model_path or env_model_id
 
     try:
-        logger.info(f"Model yükleniyor: {model_path}")
+        logger.info(f"Model yükleniyor: {model_source} (local_files_only={local_files_only})")
 
         # CUDA varsa kullan, yoksa CPU
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -79,8 +90,8 @@ def load_model():
         min_pixels = int(os.getenv("OCR_MIN_PIXELS", 640 * 28 * 28))
         max_pixels = int(os.getenv("OCR_MAX_PIXELS", 1024 * 28 * 28))
         processor = AutoProcessor.from_pretrained(
-            model_path,
-            local_files_only=True,
+            model_source,
+            local_files_only=local_files_only,
             trust_remote_code=True,
             min_pixels=min_pixels,
             max_pixels=max_pixels,
@@ -88,8 +99,8 @@ def load_model():
 
         # Modeli yükle
         model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            model_path,
-            local_files_only=True,
+            model_source,
+            local_files_only=local_files_only,
             torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
             device_map="auto" if torch.cuda.is_available() else "cpu",
             trust_remote_code=True,
@@ -112,6 +123,8 @@ def load_model():
         model.eval()
 
         logger.info("Model başarıyla yüklendi!")
+        global model_id_loaded
+        model_id_loaded = model_source
         return True
 
     except Exception as e:
@@ -130,7 +143,8 @@ async def root():
     return {
         "status": "running",
         "model_loaded": model is not None,
-        "device": str(device) if device else "not loaded"
+        "device": str(device) if device else "not loaded",
+        "model": model_id_loaded,
     }
 
 @app.post("/ocr", response_model=OCRResponse)
@@ -150,6 +164,20 @@ async def extract_text_from_image(request: OCRRequest):
         image_data = base64.b64decode(request.image)
         image = Image.open(io.BytesIO(image_data))
         logger.info(f"Görüntü yüklendi: {image.size}")
+
+        # 0) Opsiyonel 90° otomatik döndürme
+        auto_rotate = strtobool(os.getenv("OCR_AUTO_ROTATE_90", "0"))
+        if auto_rotate:
+            try:
+                # Sadece EXIF'e güvenmeden, genişilk>yükseklik ve metin çizgisi oranına bakılabilir;
+                # burada basit bir sezgisel: portrait ise left/right olabilir, kullanıcı 90° öncelikli istiyor.
+                w, h = image.size
+                if h > w:
+                    # kullanıcı önceliği 90° rotasyon; tersini dene ve model daha iyi çıkarırsa sonraki çağrıda ayarlanabilir.
+                    image = image.rotate(90, expand=True)
+                    logger.info("Otomatik 90° döndürme uygulandı (left)")
+            except Exception:
+                pass
 
         # 1) Strateji belirleme (auto ise kısa sınıflandırma)
         strategy = (request.strategy or "text").lower()
@@ -339,7 +367,8 @@ async def health_check():
     return {
         "status": "healthy" if model is not None else "model_not_loaded",
         "model_loaded": model is not None,
-        "device": str(device) if device else None
+        "device": str(device) if device else None,
+        "model": model_id_loaded,
     }
 
 if __name__ == "__main__":

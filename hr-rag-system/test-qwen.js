@@ -2,7 +2,7 @@
  * Basit OCR testi - mevcut temp görüntüleri ile
  */
 
-const LocalQwenVL = require('../utils/localQwenVL');
+const LocalQwenVL = require('./utils/localQwenVL');
 const fs = require('fs');
 const path = require('path');
 
@@ -29,7 +29,7 @@ async function testOCRSimple() {
     const tempDir = path.join(__dirname, 'temp');
     const arg = process.argv[2];
     if (!arg) {
-      console.log('❌ Kullanım: node qwen-ocr-backup/test_ocr_simple.js <dosyaAdı.pdf|png|jpg>');
+      console.log('❌ Kullanım: node test-qwen.js <dosyaAdı.pdf|png|jpg>');
       return;
     }
     const promptType = process.argv[3] || 'table_text_with_notes';
@@ -37,6 +37,18 @@ async function testOCRSimple() {
     const candidateInTemp = path.join(tempDir, arg);
     const selectedPath = fs.existsSync(candidateInTemp) ? candidateInTemp : path.resolve(arg);
     let testImage = selectedPath;
+
+    // Basit CLI opsiyonları: --strategy=auto --output=json --headers="Ad,Soyad,T.C. No"
+    const cli = process.argv.slice(4).reduce((acc, token) => {
+      const m = token.match(/^--([^=]+)=(.*)$/);
+      if (m) acc[m[1]] = m[2];
+      return acc;
+    }, {});
+    const options = {
+      strategy: cli.strategy,
+      output: cli.output,
+      headers: cli.headers ? String(cli.headers).split(',').map(s => s.trim()).filter(Boolean) : undefined,
+    };
 
     // Eğer PDF verildiyse önce ilk sayfayı PNG'ye çevir
     if (isPdf) {
@@ -62,7 +74,7 @@ import sys\nfrom pdf2image import convert_from_path\n\ntry:\n    images = conver
     
     // 4. OCR testi
     console.log(`\n4️⃣ OCR testi yapılıyor... (prompt: ${promptType})`);
-    const ocrResult = await localQwenVL.extractFromImage(testImage, promptType);
+    const ocrResult = await localQwenVL.extractFromImage(testImage, promptType, null, options);
     
     if (ocrResult.success) {
       console.log('✅ OCR başarılı!');

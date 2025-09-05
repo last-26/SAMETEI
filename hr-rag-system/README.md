@@ -53,29 +53,42 @@ npm run test
 
 Qwen2.5-VL-3B-Instruct ile gelişmiş görüntü OCR için:
 
-1. **Qwen2.5-VL-3B Modelini İndirin**:
-   ```bash
-   # Hugging Face'den modeli indirin (otomatik olarak yapılır)
-   # Model dosyası yaklaşık 6GB boyutundadır
-   ```
-
-2. **Python Bağımlılıklarını Yükleyin**:
+1. **Python Bağımlılıklarını Yükleyin**:
    ```bash
    pip install -r requirements.txt
-   pip install git+https://github.com/huggingface/transformers accelerate
-   pip install qwen-vl-utils[decord]==0.0.8
+   ```
+
+2. **ENV/Config Ayarları**:
+   `.env` (opsiyonel) veya ortam değişkenleri ile ayarlayın:
+   ```bash
+   # Model seçimi (HF ID veya yerel yol)
+   set QWEN_MODEL_ID=Qwen/Qwen2.5-VL-3B-Instruct
+   # veya
+   set QWEN_MODEL_PATH=C:\\Users\\samet\\.cache\\huggingface\\hub\\models--Qwen--Qwen2.5-VL-3B-Instruct
+
+   # Offline çalış (lokal dosyaları kullan)
+   set QWEN_LOCAL_FILES_ONLY=1
+
+   # Görüntü çözünürlük sınırları
+   set OCR_MIN_PIXELS=640*28*28
+   set OCR_MAX_PIXELS=1024*28*28
+
+   # 90° otomatik döndürme (isteğe bağlı, yalnızca 90°)
+   set OCR_AUTO_ROTATE_90=1
    ```
 
 3. **Qwen OCR Sunucusunu Başlatın**:
    ```bash
-   # Python OCR sunucusunu başlatın (arka planda çalıştırın)
    python qwen_ocr_server.py
+   # Sağlık: http://localhost:8000/health
    ```
 
 4. **Qwen OCR'ı Test Edin**:
    ```bash
-   # JavaScript testi
-   node qwen-ocr-backup/test_ocr_simple.js
+   # Resim/PDF ile test (PDF ilk sayfa otomatik PNG'ye çevrilir)
+   node test-qwen.js temp/1.png table_text_tsv
+   node test-qwen.js temp/1.png auto --output=json
+   node test-qwen.js temp/1.png table_text_markdown --headers="Ad,Soyad,T.C. No"
    ```
 
 ### 6. API Server'ı Başlat
@@ -272,14 +285,16 @@ curl -H "Authorization: Bearer YOUR_KEY" \
 
 ### Qwen2.5-VL Çalışmıyor
 ```bash
-# Model yolunu kontrol et
-ls "C:\Users\samet\.cache\huggingface\hub\models--Qwen--Qwen2.5-VL-3B-Instruct"
+# Model yolunu kontrol et (ENV ile)
+python - <<PY
+import os; print('MODEL_ID=', os.getenv('QWEN_MODEL_ID')); print('MODEL_PATH=', os.getenv('QWEN_MODEL_PATH'))
+PY
 
 # Python sunucusunu kontrol et
 python qwen_ocr_server.py
 
 # JavaScript testi çalıştır
-node qwen-ocr-backup/test_ocr_simple.js
+node test-qwen.js temp/1.png table_text_tsv
 
 # GPU/CUDA kontrolü
 python -c "import torch; print('CUDA:', torch.cuda.is_available())"

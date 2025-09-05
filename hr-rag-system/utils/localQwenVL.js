@@ -41,6 +41,9 @@ class LocalQwenVL {
       // Prompt tipine göre talimat oluştur (opsiyonel özel prompt)
       const prompt = customPrompt ?? this.generatePrompt(promptType);
 
+      // promptType -> strategy/output eşleme (sunucu genel amaçlı API'ye uyar)
+      const map = this.mapPromptToOptions(promptType, options);
+
       // API'ye istek gönder (süre ölçümü)
       const t0 = Date.now();
       const response = await this.retryRequest(async () => {
@@ -49,16 +52,11 @@ class LocalQwenVL {
           {
             image: base64Image,
             prompt: prompt,
-            // Sunucu artık genel amaçlı seçenekleri destekliyor.
-            // options.strategy: 'auto' | 'text' | 'table' | 'form' | 'key_value'
-            // options.output: 'text' | 'markdown' | 'json'
-            // options.headers: string[]
-            ...(options.strategy ? { strategy: options.strategy } : {}),
-            ...(options.output ? { output: options.output } : {}),
-            ...(options.headers ? { headers: options.headers } : {}),
+            ...(map.strategy ? { strategy: map.strategy } : {}),
+            ...(map.output ? { output: map.output } : {}),
+            ...(map.headers ? { headers: map.headers } : {}),
           },
           {
-            // timeout: 0 yaparak sınırsız; axios'ta 0 zaten sınırsızdır
             timeout: 0,
             headers: {
               'Content-Type': 'application/json'
@@ -69,7 +67,6 @@ class LocalQwenVL {
 
       if (response.data.success) {
         let outText = response.data.text || '';
-        // TAB normalizasyonu: table_text modlarında sütun sayısını sabitle
         if ((promptType || '').startsWith('table_text')) {
           outText = this.normalizeTableText(outText);
         }
@@ -154,6 +151,32 @@ class LocalQwenVL {
 - First line is header
 - Keep all columns aligned with TABs
 - No extra text or formatting`;
+  }
+
+  mapPromptToOptions(promptType, options) {
+    const normalized = String(promptType || '').toLowerCase();
+    const preset = {
+      strategy: 'text',
+      output: 'text',
+      headers: options.headers || undefined,
+    };
+    if (normalized.startsWith('table_text')) {
+      preset.strategy = 'table';
+      preset.output = 'text';
+    } else if (normalized.includes('markdown')) {
+      preset.strategy = 'table';
+      preset.output = 'markdown';
+    } else if (normalized === 'form' || normalized.includes('key_value')) {
+      preset.strategy = 'form';
+      preset.output = options.output || 'json';
+    } else if (normalized === 'auto') {
+      preset.strategy = 'auto';
+      preset.output = options.output || 'text';
+    }
+    // Çağıranın override etmesine izin ver
+    if (options.strategy) preset.strategy = options.strategy;
+    if (options.output) preset.output = options.output;
+    return preset;
   }
 
   /**
