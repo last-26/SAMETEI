@@ -67,7 +67,7 @@ async def load_model_async():
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         logger.info(f"📊 Kullanılacak cihaz: {device}")
 
-        # Model ID
+        # Model ID - Hugging Face'den yükle
         model_id = "Qwen/Qwen2.5-VL-3B-Instruct"
 
         # GPU optimizasyonları
@@ -94,7 +94,7 @@ async def load_model_async():
             device_map="auto" if torch.cuda.is_available() else "cpu",
             trust_remote_code=True,
             low_cpu_mem_usage=True,
-            max_memory={"0": "5.1GB", "cpu": "8GB"} if torch.cuda.is_available() else None,
+            max_memory={0: "5.1GB", "cpu": "8GB"} if torch.cuda.is_available() else None,
         )
 
         model.eval()
@@ -239,7 +239,7 @@ async def extract_text(request: OCRRequest, background_tasks: BackgroundTasks):
         clean_text = clean_output_text(output_text)
         processing_time = time.time() - start_time
 
-        logger.info(".2f"
+        logger.info(".2f", processing_time)
         return OCRResponse(
             success=True,
             text=clean_text,
