@@ -14,6 +14,8 @@ from PIL import Image
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
 from qwen_vl_utils import process_vision_info
 import torch
+import cv2
+import numpy as np
 
 # Logging ayarları
 logging.basicConfig(level=logging.INFO)
@@ -69,12 +71,71 @@ def preprocess_image(image_path):
         except:
             pass
 
+        # Görüntüyü numpy array'e çevir
+        image_np = np.array(image)
+
+        # Gri tonlamaya çevir
+        gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
+
+        # Kontrastı artır
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        enhanced = clahe.apply(gray)
+
+        # Gürültüyü azalt
+        denoised = cv2.fastNlMeansDenoising(enhanced, None, 10, 7, 21)
+
+        # Görüntüyü tekrar PIL Image'e çevir
+        image = Image.fromarray(denoised)
+
         logger.info(f"📷 Görüntü yüklendi: {image.size}")
         return image
 
     except Exception as e:
         logger.error(f"❌ Görüntü yükleme hatası: {e}")
         return None
+
+def detect_and_rotate_skewed_text(image):
+    """90 derece yatık metinleri tespit et ve döndür"""
+    try:
+        # Görüntüyü numpy array'e çevir
+        image_np = np.array(image)
+
+        # Gri tonlamaya çevir
+        gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
+
+        # Kenarları tespit et
+        edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+
+        # HoughLinesP ile çizgileri tespit et
+        lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=100, minLineLength=100, maxLineGap=10)
+
+        # Çizgilerin açılarını hesapla
+        angles = []
+        if lines is not None:
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                angle = np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi
+                angles.append(angle)
+
+        # Ortalama açıyı hesapla
+        if angles:
+            median_angle = np.median(angles)
+            # Görüntüyü döndür
+            (h, w) = image_np.shape[:2]
+            center = (w // 2, h // 2)
+            M = cv2.getRotationMatrix2D(center, median_angle, 1.0)
+            rotated = cv2.warpAffine(image_np, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+            # Görüntüyü tekrar PIL Image'e çevir
+            image = Image.fromarray(rotated)
+            logger.info(f"🔄 Görüntü {median_angle:.2f} derece döndürüldü.")
+        else:
+            logger.info("🔍 Yatık metin bulunamadı.")
+
+        return image
+
+    except Exception as e:
+        logger.error(f"❌ Yatık metin tespiti ve döndürme hatası: {e}")
+        return image
 
 def image_to_base64(image):
     """Görüntüyü base64'e çevir"""
@@ -99,6 +160,9 @@ def image_to_base64(image):
 def extract_text_from_image(image):
     """Görüntüden metin çıkar - basit yaklaşım"""
     try:
+        # 90 derece yatık metinleri tespit et ve döndür
+        image = detect_and_rotate_skewed_text(image)
+
         # Base64'e çevir
         image_base64 = image_to_base64(image)
         if not image_base64:
@@ -142,7 +206,7 @@ def extract_text_from_image(image):
         with torch.no_grad():
             generated_ids = model.generate(
                 **inputs,
-                max_new_tokens=1024,  # Yeterli uzunluk
+                max_new_tokens=2048,  # Yeterli uzunluk
                 temperature=0.0,      # Deterministik
                 do_sample=False,
                 num_beams=1,          # Hızlı çıkarım

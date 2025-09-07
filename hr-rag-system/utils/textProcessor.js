@@ -5,9 +5,9 @@ const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const { encoding_for_model } = require('tiktoken');
 const config = require('../config');
-// OCR import'ları - DOT-OCR öncelikli, Vision Model ve Tesseract fallback
-const { runPythonOCR } = require('./ocr_bridge');
-const OpenRouterVisionOCR = require('./visionOCR');
+// OCR import'ları - DOT-OCR öncelikli, OpenRouter Vision ve Tesseract fallback
+const { runPythonOCR } = require('./tesseract-backup/ocr_bridge');
+const OpenRouterVisionOCR = require('./openrouterOCR');
 // const LocalQwenOCR = require('./localQwenOCR'); // Qwen OCR backup'da
 const LocalDotOCR = require('./localDotOCR');
 
