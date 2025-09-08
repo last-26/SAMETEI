@@ -29,19 +29,28 @@ class HRRAGSystem {
         console.log(`🔢 Embedding boyutu: ${stats.embeddingDimension}`);
       }
 
-      // Qwen2.5-VL durumunu kontrol et (Yeni ana OCR sistemi)
+      // Qwen2.5-VL OCR API durumunu kontrol et (Ana OCR sistemi)
       console.log('🔍 OCR sistemi kontrol ediliyor...');
       try {
         const LocalQwenVL = require('./utils/localQwenVL');
-        const qwenVL = new LocalQwenVL();
+        const qwenVL = new LocalQwenVL(config.ocr?.qwenVL?.apiUrl || 'http://localhost:8000');
         const health = await qwenVL.checkHealth();
         if (health.status === 'healthy') {
-          console.log('✅ Qwen2.5-VL sistemi aktif ve hazır');
+          console.log('✅ Qwen2.5-VL OCR API aktif ve hazır');
+          console.log(`   - Model: ${health.modelLoaded ? 'Yüklendi' : 'Yüklenmedi'}`);
+          console.log(`   - Cihaz: ${health.device}`);
+          if (health.gpuMemory > 0) {
+            console.log(`   - GPU Bellek: ${health.gpuUsed.toFixed(1)}GB / ${health.gpuMemory.toFixed(1)}GB`);
+          }
         } else {
-          console.log('⚠️ Qwen2.5-VL sistemi hazır değil, sorun gidermek gerekebilir');
+          console.log(`⚠️ Qwen2.5-VL OCR API durumu: ${health.message}`);
+          if (health.status === 'model_not_loaded') {
+            console.log('   💡 İpucu: python api.py ile servisi başlattığınızdan emin olun');
+          }
         }
       } catch (e) {
-        console.log('❌ Qwen2.5-VL sistemi yüklenemedi:', e.message);
+        console.log('❌ Qwen2.5-VL OCR API bağlantısı kurulamadı:', e.message);
+        console.log('   💡 İpucu: python api.py komutu ile OCR API servisini başlatın');
       }
 
       this.isInitialized = true;
@@ -423,32 +432,28 @@ class HRRAGSystem {
     try {
       const dbStats = await this.vectorDB.getStats();
 
-      // OCR sistem durumlarını kontrol et
+      // OCR sistem durumunu kontrol et
       let ocrStatus = {
-        dotOcr: { status: 'not_available', message: 'Yüklenmemiş' },
-        // localQwen: { status: 'disabled', message: 'Qwen OCR devre dışı' }, // Artık kullanılmıyor
-        visionOcr: { status: 'not_available', message: 'Yüklenmemiş' },
-        tesseract: { status: 'available', message: 'Fallback olarak hazır' }
+        qwenVL: { status: 'not_available', message: 'Yüklenmemiş' }
       };
 
-      // DOT-OCR durumu (Ana OCR sistemi)
+      // Qwen2.5-VL OCR API durumu (Ana OCR)
       try {
-        const LocalDotOCR = require('./utils/localDotOCR');
-        const dotOCR = new LocalDotOCR();
-        const health = await dotOCR.checkHealth();
-        ocrStatus.dotOcr = {
+        const LocalQwenVL = require('./utils/localQwenVL');
+        const qwenVL = new LocalQwenVL(config.ocr?.qwenVL?.apiUrl);
+        const health = await qwenVL.checkHealth();
+        ocrStatus.qwenVL = {
           status: health.status === 'healthy' ? 'ready' : 'error',
           message: health.message || 'Bilinmiyor',
-          config: dotOCR.getConfig()
+          modelLoaded: health.modelLoaded,
+          device: health.device,
+          config: qwenVL.getConfig()
         };
       } catch (e) {
-        ocrStatus.dotOcr = { status: 'error', message: e.message };
+        ocrStatus.qwenVL = { status: 'error', message: e.message };
       }
 
-      // Vision OCR durumu (Fallback)
-      if (this.textProcessor.visionOCR) {
-        ocrStatus.visionOcr = { status: 'ready', message: 'Hazır' };
-      }
+
 
       return {
         database: dbStats,
@@ -463,7 +468,7 @@ class HRRAGSystem {
         },
         ocr: ocrStatus,
         status: this.isInitialized ? 'ready' : 'not_initialized',
-        ocrPriority: ['dot-ocr', 'vision-ocr', 'tesseract']
+        ocrPriority: ['qwen2.5-vl']
       };
     } catch (error) {
       console.error('❌ Stats alma hatası:', error);

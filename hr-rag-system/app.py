@@ -20,12 +20,11 @@ logger = logging.getLogger(__name__)
 
 # API ayarları
 API_BASE_URL = "http://localhost:8000"
-API_TIMEOUT = 300  # 5 dakika timeout
 
 def check_api_health():
     """API sağlık kontrolü"""
     try:
-        response = requests.get(f"{API_BASE_URL}/health", timeout=10)
+        response = requests.get(f"{API_BASE_URL}/health")
         if response.status_code == 200:
             data = response.json()
             if data.get("model_loaded"):
@@ -90,13 +89,49 @@ def extract_text_from_image_api(image):
             return None
 
         # Prompt
-        prompt = "Bu görüntüdeki TÜM metni çıkar. Türkçe karakterleri koru (ğ, ü, ş, ı, İ, ö, ç). Metni tam olarak, hiçbir kısaltma yapmadan çıkar."
+        prompt = """TASK: Extract ALL textual content from the image completely and accurately.
+
+RULES:
+1. Extract ONLY the text visible in the image.  
+2. Do NOT add explanations, comments, or extra information.  
+3. Leave empty areas EMPTY (no guessing, no filling).  
+4. Preserve Turkish characters (ç, ğ, ı, ö, ş, ü, Ç, Ğ, İ, Ö, Ş, Ü).  
+
+TABLE FORMATTING:
+- Separate cells in the same row with 4 spaces.  
+- End each row with a new line.  
+- Keep empty cells empty.  
+- Maintain cell order left to right, top to bottom.  
+
+SPECIAL CASES:
+- Read text on colored backgrounds.  
+- Read vertical/rotated text.  
+- Form fields:  
+  * Filled field → write its content.  
+  * Empty field → leave blank.  
+  * Checkbox → □ (empty) or ☑ (checked).  
+- Preserve numeric values exactly (including dots, commas).  
+- Preserve date formats as written (e.g., ____/__/____).  
+
+OUTPUT:
+- Plain text only.  
+- Preserve original layout.  
+- No intro or outro text.  
+- No code blocks.  
+
+PRIORITY:
+1. Accuracy (only 100% certain text).  
+2. Completeness (all readable text).  
+3. Format preservation (tables/forms).  
+
+Uncertain character → [?]  
+Unreadable section → [...]"""
 
         # API isteği hazırla
         payload = {
             "image": image_base64,
             "prompt": prompt,
-            "max_tokens": 1024
+            "max_tokens": 2048
         }
 
         logger.info("🔍 API üzerinden OCR işlemi başlatılıyor...")
@@ -104,8 +139,7 @@ def extract_text_from_image_api(image):
         # API çağrısı
         response = requests.post(
             f"{API_BASE_URL}/ocr",
-            json=payload,
-            timeout=API_TIMEOUT
+            json=payload
         )
 
         if response.status_code == 200:
@@ -139,12 +173,25 @@ def clean_output_text(text):
     text = re.sub(r"^Here is the extracted.*?:\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"^Extracted text:\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"^The extracted.*?:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^Bu görseldeki.*?çıkarılabilir:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^Bu resimdeki.*?çıkarılabilir:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^Görseldeki.*?çıkarılabilir:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^İşte.*?metin:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^Metinler şu şekilde:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^Aşağıdaki metin.*?:\s*", "", text, flags=re.IGNORECASE)
 
     # Code block'lardan çıkar
     fence = re.compile(r"```[a-zA-Z0-9]*\n([\s\S]*?)\n```")
     match = fence.search(text)
     if match:
         text = match.group(1).strip()
+
+    # Form belgelerindeki boş alan parantezlerini temizle
+    # [Gönderilmemiş], [Boş], [Doldurulmamış], [N/A] vb. gibi parantez içindeki metinleri kaldır
+    text = re.sub(r"\[\s*(?:Gönderilmemiş|Boş|Doldurulmamış|N/A|NA|None|Null|Empty|Blank|TBD|To be determined|Belirtilmemiş|Yazılmamış|Eksik|Missing|Unknown|Bilinmiyor|Yok|---|\.\.\.|…|_+|-+|\s+)\s*\]", "", text, flags=re.IGNORECASE)
+    
+    # Genel olarak köşeli parantez içinde sadece boşluk, tire, nokta vb. olan durumları temizle
+    text = re.sub(r"\[\s*[-_.…\s]*\s*\]", "", text)
 
     # Fazla boşlukları temizle
     text = re.sub(r"[ \t]+", " ", text)

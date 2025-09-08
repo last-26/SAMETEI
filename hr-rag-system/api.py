@@ -34,7 +34,45 @@ logger = logging.getLogger(__name__)
 # Request/Response modelleri
 class OCRRequest(BaseModel):
     image: str  # Base64 encoded image
-    prompt: str = "Bu görüntüdeki TÜM metni çıkar. Türkçe karakterleri koru (ğ, ü, ş, ı, İ, ö, ç)."
+    prompt: str = """TASK: Extract table data with PERFECT tab-separated formatting.
+
+CRITICAL FORMATTING RULES:
+1. Use TAB character (\t) to separate each column - MANDATORY
+2. Use NEWLINE (\n) to separate each row - MANDATORY  
+3. NO SPACES between columns - ONLY TABS
+4. Extract ALL table content including headers
+
+TABLE STRUCTURE:
+- First row: Column headers separated by \t
+- Following rows: Data cells separated by \t
+- Empty cells: Leave empty but keep \t separators
+- Multi-line content within cell: Replace newlines with space
+
+TURKISH CHARACTER SUPPORT:
+- Preserve Turkish characters (ç, ğ, ı, ö, ş, ü, Ç, Ğ, İ, Ö, Ş, Ü)
+- Keep all accented characters exactly as shown
+
+SPECIAL CASES:
+- Read text on colored backgrounds
+- Read vertical/rotated text  
+- Preserve numeric values exactly (including dots, commas)
+- Preserve date formats as written
+
+OUTPUT REQUIREMENTS:
+- ONLY the table content with \t and \n separators
+- NO explanations, NO markdown formatting
+- NO code blocks, NO extra text
+- Start directly with the header row
+- End with the last data row
+
+QUALITY STANDARDS:
+- 100% accurate text recognition
+- Perfect tab separation between columns
+- Complete table structure preservation
+- Mark uncertain text as [?] if unclear
+
+Uncertain character → [?]  
+Unreadable section → [...]"""
     max_tokens: int = 1024
 
 class OCRResponse(BaseModel):
@@ -179,10 +217,9 @@ async def extract_text(request: OCRRequest, background_tasks: BackgroundTasks):
         image_data = base64.b64decode(request.image)
         image = Image.open(io.BytesIO(image_data))
 
-        # Basit preprocessing
-        if image.mode != 'L':
-            image = image.convert('L')
-            logger.info("Grayscale uygulandı")
+        # Gelişmiş preprocessing - renkli arka plan problemini çöz
+        image = enhance_for_colored_backgrounds(image)
+        logger.info("Renkli arka plan optimizasyonu uygulandı")
 
         # Prompt hazırla
         prompt = request.prompt
@@ -256,6 +293,28 @@ async def extract_text(request: OCRRequest, background_tasks: BackgroundTasks):
             processing_time=processing_time
         )
 
+def enhance_for_colored_backgrounds(image):
+    """Renkli arka plan üzerindeki metinleri belirginleştir"""
+    from PIL import ImageEnhance, ImageOps
+    
+    # RGB modunda tut
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    
+    # Adaptif kontrast
+    enhancer = ImageEnhance.Contrast(image)
+    image = enhancer.enhance(1.8)  # Daha güçlü kontrast
+    
+    # Renk doygunluğunu azalt (metni belirginleştir)
+    color_enhancer = ImageEnhance.Color(image) 
+    image = color_enhancer.enhance(0.3)
+    
+    # Keskinlik
+    sharpness = ImageEnhance.Sharpness(image)
+    image = sharpness.enhance(2.0)
+    
+    return image
+
 def clean_output_text(text):
     """Çıktı metnini temizleme"""
     if not text:
@@ -267,12 +326,25 @@ def clean_output_text(text):
     text = re.sub(r"^Here is the extracted.*?:\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"^Extracted text:\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"^The extracted.*?:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^Bu görseldeki.*?çıkarılabilir:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^Bu resimdeki.*?çıkarılabilir:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^Görseldeki.*?çıkarılabilir:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^İşte.*?metin:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^Metinler şu şekilde:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^Aşağıdaki metin.*?:\s*", "", text, flags=re.IGNORECASE)
 
     # Code block'lardan çıkar
     fence = re.compile(r"```[a-zA-Z0-9]*\n([\s\S]*?)\n```")
     match = fence.search(text)
     if match:
         text = match.group(1).strip()
+
+    # Form belgelerindeki boş alan parantezlerini temizle
+    # [Gönderilmemiş], [Boş], [Doldurulmamış], [N/A] vb. gibi parantez içindeki metinleri kaldır
+    text = re.sub(r"\[\s*(?:Gönderilmemiş|Boş|Doldurulmamış|N/A|NA|None|Null|Empty|Blank|TBD|To be determined|Belirtilmemiş|Yazılmamış|Eksik|Missing|Unknown|Bilinmiyor|Yok|---|\.\.\.|…|_+|-+|\s+)\s*\]", "", text, flags=re.IGNORECASE)
+    
+    # Genel olarak köşeli parantez içinde sadece boşluk, tire, nokta vb. olan durumları temizle
+    text = re.sub(r"\[\s*[-_.…\s]*\s*\]", "", text)
 
     # Fazla boşlukları temizle
     text = re.sub(r"[ \t]+", " ", text)
