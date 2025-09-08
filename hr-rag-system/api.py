@@ -239,7 +239,7 @@ async def extract_text(request: OCRRequest, background_tasks: BackgroundTasks):
         clean_text = clean_output_text(output_text)
         processing_time = time.time() - start_time
 
-        logger.info(".2f", processing_time)
+        logger.info("%.2f", processing_time)
         return OCRResponse(
             success=True,
             text=clean_text,

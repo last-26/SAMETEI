@@ -112,7 +112,7 @@ def extract_text_from_image_api(image):
             result = response.json()
             if result.get("success"):
                 processing_time = result.get("processing_time", 0)
-                logger.info(".2f"
+                logger.info(f"✅ OCR başarılı - Süre: {processing_time:.2f}s")
                 return result.get("text", "").strip()
             else:
                 logger.error(f"❌ API OCR hatası: {result.get('error', 'Bilinmeyen hata')}")
