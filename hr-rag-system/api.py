@@ -73,7 +73,7 @@ QUALITY STANDARDS:
 
 Uncertain character → [?]  
 Unreadable section → [...]"""
-    max_tokens: int = 1024
+    max_tokens: int = 4096
 
 class OCRResponse(BaseModel):
     success: bool
