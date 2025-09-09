@@ -121,7 +121,25 @@ app.post('/query', async (req, res) => {
   }
 });
 
-// Title generation endpoint'i devre dışı (rate limit tasarrufu için kaldırıldı)
+// Chat başlık sistemi - Manuel indeksleme
+let chatCounter = 0;
+
+// Chat başlığı oluştur
+function generateChatTitle() {
+  chatCounter++;
+  return `hr-chatbot #${chatCounter}`;
+}
+
+// Chat başlığı endpoint'i
+app.get('/chat-title', (req, res) => {
+  const title = generateChatTitle();
+  console.log(`📝 Yeni chat başlığı oluşturuldu: ${title}`);
+  
+  res.json({
+    success: true,
+    title: title
+  });
+});
 
 // OpenAI uyumlu modeller listesi
 app.get(['/v1/models', '/models'], (req, res) => {
@@ -164,14 +182,87 @@ app.post(['/chat/completions', '/v1/chat/completions'], async (req, res) => {
     
     console.log(`🤖 LibreChat query: "${lastUserMessage.content}"`);
 
-    // Başlık üretimi isteklerini geçici olarak devre dışı bırak (lokal yanıt)
+    // Başlık üretimi isteklerini algıla ve hızlı yanıt ver
     const isTitleRequest = typeof lastUserMessage.content === 'string'
       && lastUserMessage.content.toLowerCase().includes('sohbet için en fazla 5 kelimelik');
 
     if (isTitleRequest) {
-      // Başlık isteğini tamamen devre dışı bırak: 204 No Content
-      res.status(204).end();
-      console.log('✅ Title request blocked with 204 No Content');
+      const title = generateChatTitle();
+      console.log(`📝 Başlık üretimi isteği algılandı: ${title}`);
+      
+      // Hızlı başlık yanıtı
+      const response = {
+        id: `chatcmpl-${Date.now()}`,
+        object: 'chat.completion',
+        created: Math.floor(Date.now() / 1000),
+        model: model || 'sametei-hr-assistant',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: title,
+            },
+            text: title,
+            finish_reason: 'stop',
+          },
+        ],
+        usage: {
+          prompt_tokens: 50,
+          completion_tokens: 10,
+          total_tokens: 60,
+        },
+      };
+
+      if (stream === true) {
+        // Stream yanıtı
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        const streamId = `chatcmpl-${Date.now()}`;
+        const created = Math.floor(Date.now() / 1000);
+
+        // Role chunk
+        const roleChunk = {
+          id: streamId,
+          object: 'chat.completion.chunk',
+          created,
+          model: model || 'sametei-hr-assistant',
+          choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+        };
+        res.write(`data: ${JSON.stringify(roleChunk)}\n\n`);
+
+        // Content chunk
+        const contentChunk = {
+          id: streamId,
+          object: 'chat.completion.chunk',
+          created,
+          model: model || 'sametei-hr-assistant',
+          choices: [{ index: 0, delta: { content: title }, finish_reason: null }],
+        };
+        res.write(`data: ${JSON.stringify(contentChunk)}\n\n`);
+
+        // Stop chunk
+        const stopChunk = {
+          id: streamId,
+          object: 'chat.completion.chunk',
+          created,
+          model: model || 'sametei-hr-assistant',
+          choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        };
+        res.write(`data: ${JSON.stringify(stopChunk)}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        console.log(`✅ Başlık yanıtı gönderildi: ${title}`);
+        return;
+      }
+
+      // Non-stream JSON
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.status(200).json(response);
+      console.log(`✅ Başlık yanıtı gönderildi: ${title}`);
       return;
     }
     
@@ -381,6 +472,7 @@ app.use((req, res) => {
       'GET /stats', 
       'POST /query',
       'POST /chat/completions',
+      'GET /chat-title',
       'POST /update-knowledge',
       'POST /batch-query'
     ]
@@ -405,6 +497,7 @@ async function startServer() {
       console.log(`   - GET  /stats               - Sistem istatistikleri`); 
       console.log(`   - POST /query               - RAG sorgu`);
       console.log(`   - POST /chat/completions    - LibreChat uyumlu`);
+      console.log(`   - GET  /chat-title          - Chat başlığı oluştur`);
       console.log(`   - POST /update-knowledge    - Veri güncelleme`);
       console.log(`   - POST /batch-query         - Çoklu sorgu`);
       console.log('\n🎯 LibreChat entegrasyonu hazır!');
