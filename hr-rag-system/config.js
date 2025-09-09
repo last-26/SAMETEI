@@ -15,14 +15,14 @@ module.exports = {
     apiKey: process.env.OPENROUTER_KEY, // .env dosyasından API key'i al
     baseURL: 'https://openrouter.ai/api/v1',
     embeddingModel: 'local', // OpenRouter'da embedding yok, local kullanacağız
-    chatModel: 'mistralai/mistral-7b-instruct:free',
+    chatModel: 'meta-llama/llama-4-maverick:free', // Ana model: Meta Llama 4
     retry: {
       maxRetries: 5,
       initialDelayMs: 1000,
       backoffFactor: 2,
-      // Modeller sırasıyla denenir (Llama -> Mistral -> DeepSeek)
+      // Modeller sırasıyla denenir (eski ana model fallback'e taşındı)
       fallbackModels: [
-        'meta-llama/llama-4-maverick:free',
+        'mistralai/mistral-7b-instruct:free', // Eski ana model
         'deepseek/deepseek-chat-v3.1:free',
         'qwen/qwen3-235b-a22b:free',
         'openai/gpt-oss-20b:free',
@@ -33,8 +33,8 @@ module.exports = {
 
   // RAG Ayarları
   rag: {
-    chunkSize: 300,
-    chunkOverlap: 75,
+    chunkSize: 750,
+    chunkOverlap: 100,
     topKResults: 5, // Daha fazla sonuç getir
     similarityThreshold: 0.3 // Daha düşük threshold (daha esnek eşleştirme)
   },
