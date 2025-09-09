@@ -20,14 +20,13 @@ module.exports = {
       maxRetries: 5,
       initialDelayMs: 1000,
       backoffFactor: 2,
-      // Modeller sırasıyla denenir (OpenAI -> Mistral -> DeepSeek)
+      // Modeller sırasıyla denenir (Llama -> Mistral -> DeepSeek)
       fallbackModels: [
-        'mistralai/mistral-small-3.2-24b-instruct:free',
-        'google/gemma-3n-e2b-it:free',
-        'cognitivecomputations/dolphin-mistral-24b-venice-edition:free',
-        'deepseek/deepseek-r1-0528-qwen3-8b:free',
-        'deepseek/deepseek-r1-0528:free',
-        'openai/gpt-oss-20b:free'
+        'meta-llama/llama-4-maverick:free',
+        'deepseek/deepseek-chat-v3.1:free',
+        'qwen/qwen3-235b-a22b:free',
+        'openai/gpt-oss-20b:free',
+        'deepseek/deepseek-chat-v3-0324:free'
       ]
     }
   },
@@ -51,8 +50,8 @@ module.exports = {
       apiUrl: 'http://localhost:8000', // api.py servisi
       modelName: 'Qwen/Qwen2.5-VL-3B-Instruct',
       defaultType: 'table', // table | form | text
-      timeout: 180000, // 3 dakika timeout
-      maxRetries: 3,
+      timeout: 0, // Timeout kaldırıldı (sınırsız bekleme)
+      maxRetries: 1, // Retry azaltıldı
       retryDelay: 1000,
       supportedFormats: ['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.webp'],
       minPixels: 256 * 28 * 28,

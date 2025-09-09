@@ -9,8 +9,8 @@ const path = require('path');
 class LocalQwenVL {
   constructor(apiUrl = 'http://localhost:8000') {
     this.apiUrl = apiUrl;
-    this.timeout = 180000; // 3 dakika timeout
-    this.maxRetries = 3;
+    this.timeout = 0; // Timeout kaldırıldı (sınırsız bekleme)
+    this.maxRetries = 1; // Retry azaltıldı
     this.retryDelay = 1000;
   }
 
@@ -103,7 +103,7 @@ class LocalQwenVL {
       for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
         try {
           const response = await axios.post(`${this.apiUrl}/ocr`, requestData, {
-            timeout: this.timeout,
+            timeout: this.timeout || 0, // Timeout kaldırıldı
             headers: {
               'Content-Type': 'application/json'
             }
@@ -134,7 +134,7 @@ class LocalQwenVL {
           lastError = error;
           
           if (attempt < this.maxRetries) {
-            console.log(`[Qwen OCR] Deneme ${attempt}/${this.maxRetries} başarısız, ${this.retryDelay}ms bekleyip tekrar denenecek...`);
+            console.log(`[Qwen OCR] Deneme ${attempt}/${this.maxRetries} başarısız, tekrar deneniyor...`);
             await this.sleep(this.retryDelay * attempt); // Exponential backoff
           }
         }
@@ -258,11 +258,6 @@ TABLE STRUCTURE:
 TURKISH CHARACTER SUPPORT:
 - Preserve: ç, ğ, ı, ö, ş, ü, Ç, Ğ, İ, Ö, Ş, Ü
 - Keep all accented characters exactly as shown
-
-EXAMPLE OUTPUT FORMAT:
-Veri Kategorisi\\tVeri Örnekleri\\tİlgili Departman\\tYasal Dayanak\\tSaklama Süresi\\tİmha Periyodu
-Çalışan Verileri\\tİş sözleşmesi, SGK bildirgeleri\\tİnsan Kaynakları\\t4857 İş Kanunu\\t10 Yıl\\tPeriyodik imha
-İSG Kayıtları\\tSağlık raporları, iş kazası\\tİSG Birimi\\t6331 İSG Kanunu\\t15 Yıl\\tPeriyodik imha
 
 OUTPUT REQUIREMENTS:
 - ONLY the table content with \\t and \\n separators
