@@ -2,6 +2,7 @@
 
 # Logs
 data-node
+data-node-backup-old
 meili_data*
 data/
 logs

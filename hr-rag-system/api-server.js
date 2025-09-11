@@ -179,6 +179,11 @@ app.post(['/chat/completions', '/v1/chat/completions'], async (req, res) => {
         }
       });
     }
+
+    // Chat history'yi hazırla (sadece user ve assistant mesajları)
+    const chatHistory = messages.filter(m => 
+      (m.role === 'user' || m.role === 'assistant') && m.content && m.content.trim()
+    );
     
     console.log(`🤖 LibreChat query: "${lastUserMessage.content}"`);
 
@@ -266,8 +271,10 @@ app.post(['/chat/completions', '/v1/chat/completions'], async (req, res) => {
       return;
     }
     
-    // RAG ile cevap üret
-    const ragResult = await ragSystem.query(lastUserMessage.content);
+    // RAG ile cevap üret (chat history ile)
+    const ragResult = await ragSystem.query(lastUserMessage.content, {
+      chatHistory: chatHistory
+    });
     
     // OpenAI-uyumlu yanıt nesnesi
     const response = {

@@ -10,33 +10,49 @@ module.exports = {
     useInMemory: false // MongoDB kullan
   },
 
-  // OpenRouter API Ayarları
-  openrouter: {
-    apiKey: process.env.OPENROUTER_KEY, // .env dosyasından API key'i al
-    baseURL: 'https://openrouter.ai/api/v1',
-    embeddingModel: 'local', // OpenRouter'da embedding yok, local kullanacağız
-    chatModel: 'meta-llama/llama-4-maverick:free', // Ana model: Meta Llama 4
+  // Ollama API Ayarları
+  ollama: {
+    baseURL: 'http://localhost:11434', // Ollama varsayılan URL'si
+    model: 'llama3.1:8b-instruct-q4_0', // İndirdiğiniz model
+    embeddingModel: 'local', // Local TF-IDF embedding kullanacağız
     retry: {
-      maxRetries: 5,
+      maxRetries: 3,
       initialDelayMs: 1000,
-      backoffFactor: 2,
-      // Modeller sırasıyla denenir (eski ana model fallback'e taşındı)
-      fallbackModels: [
-        'mistralai/mistral-7b-instruct:free', // Eski ana model
-        'deepseek/deepseek-chat-v3.1:free',
-        'qwen/qwen3-235b-a22b:free',
-        'openai/gpt-oss-20b:free',
-        'deepseek/deepseek-chat-v3-0324:free'
-      ]
-    }
+      backoffFactor: 2
+    },
+    timeout: 0 // Timeout kaldırıldı - GPU model yükleme için
   },
 
-  // RAG Ayarları
+  // RAG Ayarları (Optimized)
   rag: {
-    chunkSize: 750,
-    chunkOverlap: 100,
+    chunkSize: 500,
+    chunkOverlap: 85,
     topKResults: 5, // Daha fazla sonuç getir
-    similarityThreshold: 0.3 // Daha düşük threshold (daha esnek eşleştirme)
+    similarityThreshold: 0.35, // Daha düşük threshold (daha esnek eşleştirme)
+    
+    // Advanced Search Parameters
+    vectorWeight: 0.7, // Vector search ağırlığı (0.0-1.0)
+    keywordWeight: 0.3, // Keyword search ağırlığı (0.0-1.0)
+    contextBonus: 0.1, // Chat history context bonus
+    recentBonus: 0.05, // Yeni dökümanlar için bonus
+    minChunkLength: 50, // Minimum chunk uzunluğu
+    
+    // BM25 Parameters
+    bm25_k1: 1.5, // Term frequency saturation parameter
+    bm25_b: 0.75, // Document length normalization parameter
+    
+    // Semantic Diversity
+    maxChunksPerCategory: 2, // Her kategoriden max chunk sayısı
+    enableSemanticDiversity: true,
+    
+    // Re-ranking Parameters
+    enableReRanking: true,
+    contextImportance: 0.8, // Query terms importance
+    historyImportance: 0.4, // Chat history terms importance
+    
+    // Logging
+    enableChunkLogging: true, // Chunk detaylarını logla
+    logMetrics: true // Similarity metrics logla
   },
 
   // OCR Ayarları - Sadece Qwen2.5-VL
@@ -85,7 +101,7 @@ module.exports = {
 
   // Server Ayarları
   server: {
-    port: 3001,
+    port: 3002, // Docker rag_api ile çakışmayı önlemek için 3002'ye değiştirdim
     host: '0.0.0.0'
   },
 

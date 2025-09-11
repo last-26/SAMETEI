@@ -164,19 +164,69 @@ class MongoDBVectorDB {
   }
 
   /**
-   * In-memory similarity search
+   * Advanced similarity metrics
+   */
+  calculateAdvancedSimilarity(queryEmbedding, docEmbedding) {
+    // 1. Cosine Similarity
+    const cosineSim = this.cosineSimilarity(queryEmbedding, docEmbedding);
+    
+    // 2. Euclidean Distance (normalized)
+    const euclideanDist = this.euclideanDistance(queryEmbedding, docEmbedding);
+    const euclideanSim = 1 / (1 + euclideanDist);
+    
+    // 3. Jaccard Similarity (for sparse vectors)
+    const jaccardSim = this.jaccardSimilarity(queryEmbedding, docEmbedding);
+    
+    // Weighted combination (Cosine dominant, others supportive)
+    const finalScore = (cosineSim * 0.6) + (euclideanSim * 0.25) + (jaccardSim * 0.15);
+    
+    return {
+      finalScore,
+      cosine: cosineSim,
+      euclidean: euclideanSim,
+      jaccard: jaccardSim
+    };
+  }
+
+  euclideanDistance(vec1, vec2) {
+    if (vec1.length !== vec2.length) return Infinity;
+    let sum = 0;
+    for (let i = 0; i < vec1.length; i++) {
+      sum += Math.pow(vec1[i] - vec2[i], 2);
+    }
+    return Math.sqrt(sum);
+  }
+
+  jaccardSimilarity(vec1, vec2) {
+    // Convert to binary vectors (non-zero elements)
+    const set1 = new Set(vec1.map((v, i) => v !== 0 ? i : null).filter(v => v !== null));
+    const set2 = new Set(vec2.map((v, i) => v !== 0 ? i : null).filter(v => v !== null));
+    
+    const intersection = new Set([...set1].filter(x => set2.has(x)));
+    const union = new Set([...set1, ...set2]);
+    
+    return intersection.size / union.size;
+  }
+
+  /**
+   * Advanced In-memory similarity search with multiple metrics
    */
   inMemorySimilaritySearch(queryEmbedding, limit = 3) {
     if (this.inMemoryStorage.length === 0) {
       return [];
     }
     
-    // Cosine similarity hesapla
+    // Advanced similarity hesapla
     const similarities = this.inMemoryStorage.map(doc => {
-      const similarity = this.cosineSimilarity(queryEmbedding, doc.embedding);
+      const simMetrics = this.calculateAdvancedSimilarity(queryEmbedding, doc.embedding);
       return {
         ...doc,
-        score: similarity
+        score: simMetrics.finalScore,
+        metrics: {
+          cosine: simMetrics.cosine,
+          euclidean: simMetrics.euclidean,
+          jaccard: simMetrics.jaccard
+        }
       };
     });
     
