@@ -37,12 +37,18 @@ class OllamaClient {
       const tokens = tokenizer.tokenize(cleanText);
       
       if (!tokens || tokens.length === 0) {
-        throw new Error('Tokenize edilecek metin bulunamadı');
+        console.warn('⚠️ No tokens extracted from text, creating default embedding');
+        // Return standard length vector for consistency
+        return new Array(100).fill(0.01);
       }
 
       // TF-IDF vektörü oluştur (basit implementasyon)
       const vocabulary = [...new Set(tokens)]; // Benzersiz kelimeler
-      const vector = new Array(vocabulary.length).fill(0);
+      
+      // Ensure minimum vector length for consistency
+      const minVectorLength = 100;
+      const vectorLength = Math.max(vocabulary.length, minVectorLength);
+      const vector = new Array(vectorLength).fill(0);
       
       // Her kelimenin frekansını hesapla
       const termFreq = {};
@@ -52,21 +58,21 @@ class OllamaClient {
 
       // Vektörü doldur
       vocabulary.forEach((word, index) => {
-        const tf = termFreq[word] || 0;
-        const normalizedTf = tf / tokens.length; // Normalize et
-        vector[index] = normalizedTf;
+        if (index < vector.length) {
+          const tf = termFreq[word] || 0;
+          const normalizedTf = tf / tokens.length; // Normalize et
+          vector[index] = normalizedTf;
+        }
       });
 
-      return {
-        embedding: vector,
-        usage: {
-          prompt_tokens: tokens.length,
-          total_tokens: tokens.length
-        }
-      };
+      console.log(`🔍 Created embedding: length=${vector.length}, type=${typeof vector}, isArray=${Array.isArray(vector)}`);
+      
+      // Return only the vector array, not wrapped in an object
+      return vector;
     } catch (error) {
-      console.error('Embedding oluşturma hatası:', error);
-      throw error;
+      console.error('❌ Embedding oluşturma hatası:', error);
+      // Return consistent fallback embedding
+      return new Array(100).fill(0.01);
     }
   }
 
@@ -79,20 +85,28 @@ class OllamaClient {
     
     for (let i = 0; i < texts.length; i++) {
       try {
-        const result = await this.createEmbedding(texts[i]);
-        embeddings.push(result.embedding);
+        const embeddingVector = await this.createEmbedding(texts[i]);
+        
+        // Validate the embedding is an array
+        if (!Array.isArray(embeddingVector)) {
+          console.warn(`⚠️ Embedding ${i+1} is not an array, converting...`);
+          embeddings.push(new Array(100).fill(0.01));
+        } else {
+          embeddings.push(embeddingVector);
+        }
         
         if ((i + 1) % 10 === 0) {
           console.log(`✅ ${i + 1}/${texts.length} embedding oluşturuldu`);
         }
       } catch (error) {
         console.error(`❌ ${i + 1}. metin için embedding oluşturulamadı:`, error.message);
-        // Hata durumunda boş vektör ekle
-        embeddings.push(new Array(100).fill(0));
+        // Hata durumunda consistent fallback vektör ekle
+        embeddings.push(new Array(100).fill(0.01));
       }
     }
 
     console.log(`✅ Toplam ${embeddings.length} embedding oluşturuldu`);
+    console.log(`🔍 First embedding check: type=${typeof embeddings[0]}, isArray=${Array.isArray(embeddings[0])}, length=${embeddings[0]?.length}`);
     return embeddings;
   }
 
@@ -231,6 +245,49 @@ Lütfen DETAYLI, YARATICI ve FAYDALI cevaplar ver. Türkçe yanıt ver.`;
     console.log(`🧠 ${messages.length} mesajlı chat history ile yanıt üretiliyor...`);
     
     return await this.createChatCompletion(messages, 0.3); // Biraz daha yaratıcı
+  }
+
+  /**
+   * ANTI-REPETITION Chat Completion - Dynamic prompting for diverse responses
+   */
+  async antiRepetitionChatCompletion(userQuery, context = '', chatHistory = [], dynamicPrompt = '', options = {}) {
+    const fallback = `${require('../config').support.fallbackMessage}`;
+    
+    // Dynamic prompt kullan, yoksa default'a geri dön
+    let systemPrompt = dynamicPrompt;
+    
+    if (!systemPrompt || systemPrompt.trim().length === 0) {
+      systemPrompt = `Sen yaratıcı ve akıllı bir HR asistanısın. Farklı perspektiflerden yanıtlar ver.`;
+    }
+    
+    // Context'i prompt'a ekle
+    systemPrompt += `\n\nŞİRKET BİLGİLERİ:\n${context}\n\nÖNEMLİ: Bilgi yoksa: "${fallback}"\n\nTürkçe yanıt ver.`;
+    
+    // Messages array oluştur
+    const messages = [
+      { role: 'system', content: systemPrompt }
+    ];
+    
+    // Chat history ekle (son 6 mesaj)
+    if (chatHistory && chatHistory.length > 0) {
+      const recentHistory = chatHistory.slice(-6);
+      messages.push(...recentHistory);
+    }
+    
+    // Current query ekle
+    messages.push({ role: 'user', content: userQuery });
+    
+    console.log(`🔒 Anti-repetition chat completion: ${messages.length} mesaj, strategy=${options.strategy || 'normal'}`);
+    
+    // Temperature'ı dynamic olarak ayarla
+    let temperature = options.temperature || 0.3;
+    if (options.strategy === 'aggressive_diversification') {
+      temperature = 0.8; // Daha yaratıcı
+    } else if (options.strategy === 'moderate_diversification') {
+      temperature = 0.5; // Orta seviye yaratıcılık
+    }
+    
+    return await this.createChatCompletion(messages, temperature);
   }
 
   /**

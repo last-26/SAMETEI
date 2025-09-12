@@ -23,36 +23,83 @@ module.exports = {
     timeout: 0 // Timeout kaldırıldı - GPU model yükleme için
   },
 
-  // RAG Ayarları (Optimized)
+  // RAG Ayarları (ULTRA OPTIMIZED v2.0 - PERFORMANCE FOCUSED)
   rag: {
-    chunkSize: 500,
-    chunkOverlap: 85,
-    topKResults: 5, // Daha fazla sonuç getir
-    similarityThreshold: 0.35, // Daha düşük threshold (daha esnek eşleştirme)
+    // === CHUNK OPTİMİZASYONU ===
+    chunkSize: 600, // 400→600 (%50 artış) - Daha zengin context
+    chunkOverlap: 120, // %20 overlap (optimal balance)
+    maxContextLength: 8000, // 8K token context limit
+    minChunkLength: 80, // Minimum chunk uzunluğu artırıldı
     
-    // Advanced Search Parameters
-    vectorWeight: 0.7, // Vector search ağırlığı (0.0-1.0)
-    keywordWeight: 0.3, // Keyword search ağırlığı (0.0-1.0)
-    contextBonus: 0.1, // Chat history context bonus
-    recentBonus: 0.05, // Yeni dökümanlar için bonus
-    minChunkLength: 50, // Minimum chunk uzunluğu
+    // === RETRIEVAL STRATEJİSİ (PRECISION-FOCUSED) ===
+    initialTopK: 20, // İlk retrieval - geniş ağ
+    hybridTopK: 8, // Hibrit filtreleme sonrası (azaltıldı)
+    preRerankTopK: 5, // Re-ranking öncesi final selection
+    finalTopK: 3, // Ultra-precision final chunks (azaltıldı)
+    similarityThreshold: 0.25, // Daha düşük threshold - esnek eşleştirme
     
-    // BM25 Parameters
-    bm25_k1: 1.5, // Term frequency saturation parameter
-    bm25_b: 0.75, // Document length normalization parameter
+    // === HİBRİT ARAMA AĞIRLIKLARI ===
+    vectorWeight: 0.50, // Dense retrieval (embedding)
+    keywordWeight: 0.25, // Sparse retrieval (BM25)
+    semanticReRankWeight: 0.15, // Cross-encoder re-ranking
+    contextMatchWeight: 0.10, // Chat history + intent matching
     
-    // Semantic Diversity
-    maxChunksPerCategory: 2, // Her kategoriden max chunk sayısı
+    // === GELİŞMİŞ BM25 PARAMETERS ===
+    bm25_k1: 1.8, // Term frequency saturation (optimal)
+    bm25_b: 0.6, // Document length normalization (tuned)
+    bm25_k3: 500, // Query term frequency normalization
+    
+    // === ÇOKLU BENZERLİK METRİKLERİ ===
+    enableMultiSimilarity: false, // Geçici olarak kapatıldı - embedding format sorunları çözülene kadar
+    similarityMetrics: {
+      cosine: 0.40, // Cosine similarity ağırlığı
+      euclidean: 0.25, // Euclidean distance ağırlığı  
+      jaccard: 0.20, // Jaccard index ağırlığı
+      manhattan: 0.15 // Manhattan distance ağırlığı
+    },
+    
+    // === QUERY EXPANSION ===
+    enableAdvancedExpansion: true,
+    expansionMethods: {
+      synonyms: true, // Synonym expansion
+      morphological: true, // Türkçe morfolojik genişletme
+      semantic: true, // Semantic similarity expansion
+      contextual: true // Context-aware expansion
+    },
+    maxExpansionTerms: 8,
+    
+    // === MULTI-STAGE RE-RANKING ===
+    enableMultiStageReRanking: true,
+    reRankingStages: {
+      stage1_keyword: 0.25, // Keyword matching bonus
+      stage2_semantic: 0.30, // Semantic similarity re-score
+      stage3_context: 0.25, // Context relevance
+      stage4_diversity: 0.20 // Result diversity
+    },
+    
+    // === CONTEXT AWARE FEATURES ===
+    contextBonus: 0.15, // Chat history context bonus (increased)
+    recentBonus: 0.08, // Yeni dökümanlar için bonus (increased)
+    categoryBonus: 0.12, // Same category bonus
+    sourceReliabilityBonus: 0.05, // Güvenilir kaynak bonusu
+    
+    // === SEMANTİK ÇEŞİTLİLİK ===
+    maxChunksPerCategory: 3, // Her kategoriden max chunk sayısı (increased)
     enableSemanticDiversity: true,
+    diversityThreshold: 0.85, // Çok benzer içerikleri filtrele
     
-    // Re-ranking Parameters
-    enableReRanking: true,
-    contextImportance: 0.8, // Query terms importance
-    historyImportance: 0.4, // Chat history terms importance
+    // === ANTI-REPETITION SYSTEM ===
+    enableAntiRepetition: true, // Tekrar eden cevap engelleme
+    repetitionMemorySize: 5, // Son N cevabı hatırla
+    repetitionThreshold: 0.7, // Similarity threshold for repetition
+    diversityEnforcement: 0.3, // Chunk diversity zorlama
+    conversationAwareness: true, // Konuşma akışı farkındalığı
     
-    // Logging
+    // === PERFORMANS İZLEME ===
     enableChunkLogging: true, // Chunk detaylarını logla
-    logMetrics: true // Similarity metrics logla
+    logMetrics: true, // Similarity metrics logla
+    enablePerformanceMonitoring: true, // Performance tracking
+    enableDebugMode: false // Debug modu (production'da kapalı)
   },
 
   // OCR Ayarları - Sadece Qwen2.5-VL

@@ -112,7 +112,77 @@ class MongoDBVectorDB {
   }
 
   /**
-   * Vector similarity search (MongoDB Atlas Vector Search)
+   * MULTI-SIMILARITY VECTOR SEARCH - Çoklu benzerlik metriği ile arama
+   */
+  async multiSimilaritySearch(queryEmbedding, limit = 3) {
+    if (!config.rag.enableMultiSimilarity) {
+      return this.vectorSearch(queryEmbedding, limit);
+    }
+    
+    try {
+      console.log(`🔍 Multi-similarity search: Query embedding type=${typeof queryEmbedding}, isArray=${Array.isArray(queryEmbedding)}`);
+      
+      const results = await this.vectorSearch(queryEmbedding, limit * 2);
+      
+      if (!results || results.length === 0) {
+        console.warn('⚠️ No results from vector search for multi-similarity');
+        return [];
+      }
+
+      console.log(`🔍 Multi-similarity: Processing ${results.length} documents`);
+      
+      // Multi-similarity scoring with detailed logging
+      const rescored = results.map((doc, index) => {
+        if (!doc.embedding) {
+          console.warn(`⚠️ Document ${index} has no embedding`);
+          return { ...doc, score: 0.1, metrics: this.fallbackSimilarity() };
+        }
+        
+        // Debug first document's embedding
+        if (index === 0) {
+          console.log(`🔍 First doc embedding type=${typeof doc.embedding}, isArray=${Array.isArray(doc.embedding)}`);
+          if (Array.isArray(doc.embedding)) {
+            console.log(`🔍 First doc embedding length=${doc.embedding.length}, first value=${doc.embedding[0]}`);
+          }
+        }
+        
+        const similarities = this.calculateAdvancedSimilarity(queryEmbedding, doc.embedding);
+        
+        // Use config metrics if available, otherwise fallback
+        let combinedScore;
+        if (config.rag.similarityMetrics) {
+          const metrics = config.rag.similarityMetrics;
+          combinedScore = 
+            (similarities.cosine * metrics.cosine) +
+            (similarities.euclidean * metrics.euclidean) +
+            (similarities.jaccard * metrics.jaccard) +
+            (similarities.manhattan * metrics.manhattan);
+        } else {
+          combinedScore = similarities.finalScore || 0.1;
+        }
+        
+        return {
+          ...doc,
+          score: isNaN(combinedScore) ? 0.1 : combinedScore,
+          metrics: similarities
+        };
+      });
+      
+      console.log(`✅ Multi-similarity: Rescored ${rescored.length} documents`);
+      
+      return rescored
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
+        
+    } catch (error) {
+      console.error('❌ Multi-similarity search error:', error.message);
+      console.log('🔄 Falling back to regular vector search');
+      return this.vectorSearch(queryEmbedding, limit);
+    }
+  }
+
+  /**
+   * Traditional vector search (fallback)
    */
   async vectorSearch(queryEmbedding, limit = 3) {
     try {
@@ -167,45 +237,209 @@ class MongoDBVectorDB {
    * Advanced similarity metrics
    */
   calculateAdvancedSimilarity(queryEmbedding, docEmbedding) {
-    // 1. Cosine Similarity
-    const cosineSim = this.cosineSimilarity(queryEmbedding, docEmbedding);
+    try {
+      // === EMBEDDING VALIDATION ===
+      const validatedQuery = this.validateAndNormalizeEmbedding(queryEmbedding, 'query');
+      const validatedDoc = this.validateAndNormalizeEmbedding(docEmbedding, 'document');
+      
+      if (!validatedQuery || !validatedDoc) {
+        console.warn('⚠️ Invalid embeddings detected, using fallback similarity');
+        return this.fallbackSimilarity();
+      }
+
+      // === SIMILARITY CALCULATIONS ===
+      const cosineSim = this.cosineSimilarity(validatedQuery, validatedDoc);
+      const euclideanDist = this.euclideanDistance(validatedQuery, validatedDoc);
+      const euclideanSim = 1 / (1 + euclideanDist);
+      const jaccardSim = this.jaccardSimilarity(validatedQuery, validatedDoc);
+      const manhattanDist = this.manhattanDistance(validatedQuery, validatedDoc);
+      const manhattanSim = 1 / (1 + manhattanDist);
+      const pearsonSim = this.pearsonCorrelation(validatedQuery, validatedDoc);
+      
+      // === WEIGHTED COMBINATION ===
+      let finalScore;
+      if (config.rag.enableMultiSimilarity && config.rag.similarityMetrics) {
+        const metrics = config.rag.similarityMetrics;
+        finalScore = (cosineSim * metrics.cosine) + 
+                    (euclideanSim * metrics.euclidean) + 
+                    (jaccardSim * metrics.jaccard) + 
+                    (manhattanSim * metrics.manhattan);
+      } else {
+        finalScore = (cosineSim * 0.5) + (euclideanSim * 0.25) + (jaccardSim * 0.15) + (manhattanSim * 0.1);
+      }
+
+      return {
+        finalScore: isNaN(finalScore) ? 0 : finalScore,
+        cosine: isNaN(cosineSim) ? 0 : cosineSim,
+        euclidean: isNaN(euclideanSim) ? 0 : euclideanSim,
+        jaccard: isNaN(jaccardSim) ? 0 : jaccardSim,
+        manhattan: isNaN(manhattanSim) ? 0 : manhattanSim,
+        pearson: isNaN(pearsonSim) ? 0 : pearsonSim
+      };
+    } catch (error) {
+      console.error('❌ Advanced similarity calculation error:', error.message);
+      return this.fallbackSimilarity();
+    }
+  }
+
+  /**
+   * Validate and normalize embedding vectors
+   */
+  validateAndNormalizeEmbedding(embedding, type = 'unknown') {
+    if (!embedding) {
+      console.warn(`⚠️ ${type} embedding is null/undefined`);
+      return null;
+    }
+
+    // Convert different formats to array
+    let normalizedEmbedding;
     
-    // 2. Euclidean Distance (normalized)
-    const euclideanDist = this.euclideanDistance(queryEmbedding, docEmbedding);
-    const euclideanSim = 1 / (1 + euclideanDist);
-    
-    // 3. Jaccard Similarity (for sparse vectors)
-    const jaccardSim = this.jaccardSimilarity(queryEmbedding, docEmbedding);
-    
-    // Weighted combination (Cosine dominant, others supportive)
-    const finalScore = (cosineSim * 0.6) + (euclideanSim * 0.25) + (jaccardSim * 0.15);
-    
+    if (Array.isArray(embedding)) {
+      normalizedEmbedding = embedding;
+    } else if (typeof embedding === 'string') {
+      try {
+        normalizedEmbedding = JSON.parse(embedding);
+      } catch (e) {
+        // String might be space or comma separated numbers
+        normalizedEmbedding = embedding.split(/[\s,]+/).map(x => parseFloat(x)).filter(x => !isNaN(x));
+      }
+    } else if (typeof embedding === 'object' && embedding.embedding) {
+      // If embedding is wrapped in an object (like {embedding: [...], usage: {...}})
+      normalizedEmbedding = embedding.embedding;
+    } else if (typeof embedding === 'object' && embedding.data) {
+      // Alternative object format
+      normalizedEmbedding = embedding.data;
+    } else {
+      console.warn(`⚠️ ${type} embedding has unexpected type:`, typeof embedding);
+      return null;
+    }
+
+    // Validate array
+    if (!Array.isArray(normalizedEmbedding) || normalizedEmbedding.length === 0) {
+      console.warn(`⚠️ ${type} embedding is not a valid array`);
+      return null;
+    }
+
+    // Validate numbers
+    const validNumbers = normalizedEmbedding.every(x => typeof x === 'number' && !isNaN(x));
+    if (!validNumbers) {
+      console.warn(`⚠️ ${type} embedding contains non-numeric values`);
+      return null;
+    }
+
+    return normalizedEmbedding;
+  }
+
+  /**
+   * Fallback similarity when calculations fail
+   */
+  fallbackSimilarity() {
     return {
-      finalScore,
-      cosine: cosineSim,
-      euclidean: euclideanSim,
-      jaccard: jaccardSim
+      finalScore: 0.1, // Small non-zero score
+      cosine: 0.1,
+      euclidean: 0.1,
+      jaccard: 0.1,
+      manhattan: 0.1,
+      pearson: 0.1
     };
   }
 
-  euclideanDistance(vec1, vec2) {
-    if (vec1.length !== vec2.length) return Infinity;
-    let sum = 0;
-    for (let i = 0; i < vec1.length; i++) {
-      sum += Math.pow(vec1[i] - vec2[i], 2);
+  /**
+   * Manhattan distance calculation
+   */
+  manhattanDistance(vec1, vec2) {
+    try {
+      if (!Array.isArray(vec1) || !Array.isArray(vec2) || vec1.length !== vec2.length) {
+        return Infinity;
+      }
+      return vec1.reduce((sum, v, i) => sum + Math.abs(v - vec2[i]), 0);
+    } catch (error) {
+      console.warn('⚠️ Manhattan distance calculation failed:', error.message);
+      return Infinity;
     }
-    return Math.sqrt(sum);
+  }
+
+  /**
+   * Pearson correlation coefficient
+   */
+  pearsonCorrelation(vec1, vec2) {
+    try {
+      if (!Array.isArray(vec1) || !Array.isArray(vec2) || vec1.length !== vec2.length) {
+        return 0;
+      }
+      
+      const n = vec1.length;
+      if (n === 0) return 0;
+      
+      const sum1 = vec1.reduce((s, v) => s + v, 0);
+      const sum2 = vec2.reduce((s, v) => s + v, 0);
+      const sum1Sq = vec1.reduce((s, v) => s + v * v, 0);
+      const sum2Sq = vec2.reduce((s, v) => s + v * v, 0);
+      const pSum = vec1.reduce((s, v, i) => s + v * vec2[i], 0);
+      
+      const numerator = pSum - (sum1 * sum2 / n);
+      const denominator = Math.sqrt((sum1Sq - sum1 * sum1 / n) * (sum2Sq - sum2 * sum2 / n));
+      
+      return denominator === 0 ? 0 : Math.max(-1, Math.min(1, numerator / denominator));
+    } catch (error) {
+      console.warn('⚠️ Pearson correlation calculation failed:', error.message);
+      return 0;
+    }
+  }
+
+  euclideanDistance(vec1, vec2) {
+    try {
+      if (!Array.isArray(vec1) || !Array.isArray(vec2) || vec1.length !== vec2.length) {
+        return Infinity;
+      }
+      let sum = 0;
+      for (let i = 0; i < vec1.length; i++) {
+        sum += Math.pow(vec1[i] - vec2[i], 2);
+      }
+      return Math.sqrt(sum);
+    } catch (error) {
+      console.warn('⚠️ Euclidean distance calculation failed:', error.message);
+      return Infinity;
+    }
+  }
+
+  cosineSimilarity(vec1, vec2) {
+    try {
+      if (!Array.isArray(vec1) || !Array.isArray(vec2) || vec1.length !== vec2.length) {
+        return 0;
+      }
+      
+      const dotProduct = vec1.reduce((sum, v, i) => sum + v * vec2[i], 0);
+      const norm1 = Math.sqrt(vec1.reduce((sum, v) => sum + v * v, 0));
+      const norm2 = Math.sqrt(vec2.reduce((sum, v) => sum + v * v, 0));
+      
+      if (norm1 === 0 || norm2 === 0) return 0;
+      return Math.max(-1, Math.min(1, dotProduct / (norm1 * norm2)));
+    } catch (error) {
+      console.warn('⚠️ Cosine similarity calculation failed:', error.message);
+      return 0;
+    }
   }
 
   jaccardSimilarity(vec1, vec2) {
-    // Convert to binary vectors (non-zero elements)
-    const set1 = new Set(vec1.map((v, i) => v !== 0 ? i : null).filter(v => v !== null));
-    const set2 = new Set(vec2.map((v, i) => v !== 0 ? i : null).filter(v => v !== null));
-    
-    const intersection = new Set([...set1].filter(x => set2.has(x)));
-    const union = new Set([...set1, ...set2]);
-    
-    return intersection.size / union.size;
+    try {
+      if (!Array.isArray(vec1) || !Array.isArray(vec2) || vec1.length !== vec2.length) {
+        console.warn('⚠️ Invalid vectors for Jaccard similarity');
+        return 0;
+      }
+      
+      // Convert to binary vectors (non-zero elements)
+      const set1 = new Set(vec1.map((v, i) => v !== 0 ? i : null).filter(v => v !== null));
+      const set2 = new Set(vec2.map((v, i) => v !== 0 ? i : null).filter(v => v !== null));
+      
+      const intersection = new Set([...set1].filter(x => set2.has(x)));
+      const union = new Set([...set1, ...set2]);
+      
+      return union.size > 0 ? intersection.size / union.size : 0;
+    } catch (error) {
+      console.warn('⚠️ Jaccard similarity calculation failed:', error.message);
+      return 0;
+    }
   }
 
   /**

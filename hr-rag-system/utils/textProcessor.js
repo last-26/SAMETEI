@@ -635,38 +635,21 @@ except Exception as e:
               if (imagePath) {
                 console.log(`[PDF] Sayfa ${pageNum}: OCR işlemleri başlatılıyor...`);
                 
-                // 2a. Text OCR (paragraflar, normal metinler için)
+                // 2. Hybrid OCR (tek çağrı ile hem text hem table içeriği)
                 try {
-                  const textOcrResult = await this.localQwenVL.extractFromImage(imagePath, 'text');
-                  if (textOcrResult.success && textOcrResult.text && textOcrResult.text.length > 20) {
+                  const hybridOcrResult = await this.localQwenVL.extractFromImage(imagePath, 'hybrid');
+                  if (hybridOcrResult.success && hybridOcrResult.text && hybridOcrResult.text.length > 20) {
                     sources.push({
-                      content: textOcrResult.text.trim(),
-                      type: 'ocr_text',
+                      content: hybridOcrResult.text.trim(),
+                      type: 'ocr_hybrid',
                       source: 'qwen2.5-vl',
-                      processingTime: textOcrResult.processingTime,
-                      tokensUsed: textOcrResult.tokensUsed
+                      processingTime: hybridOcrResult.processingTime,
+                      tokensUsed: hybridOcrResult.tokensUsed
                     });
-                    console.log(`[PDF] Sayfa ${pageNum}: Text OCR tamamlandı (${textOcrResult.text.length} karakter, ${textOcrResult.elapsedMs}ms)`);
+                    console.log(`[PDF] Sayfa ${pageNum}: Hybrid OCR tamamlandı (${hybridOcrResult.text.length} karakter, ${hybridOcrResult.elapsedMs}ms)`);
                   }
                 } catch (e) {
-                  console.error(`[PDF] Sayfa ${pageNum} Text OCR hatası:`, e.message);
-                }
-
-                // 2b. Table OCR (tablolar, formlar için)
-                try {
-                  const tableOcrResult = await this.localQwenVL.extractFromImage(imagePath, 'table');
-                  if (tableOcrResult.success && tableOcrResult.text && tableOcrResult.text.length > 20) {
-                    sources.push({
-                      content: tableOcrResult.text.trim(),
-                      type: 'ocr_table',
-                      source: 'qwen2.5-vl',
-                      processingTime: tableOcrResult.processingTime,
-                      tokensUsed: tableOcrResult.tokensUsed
-                    });
-                    console.log(`[PDF] Sayfa ${pageNum}: Table OCR tamamlandı (${tableOcrResult.text.length} karakter, ${tableOcrResult.elapsedMs}ms)`);
-                  }
-                } catch (e) {
-                  console.error(`[PDF] Sayfa ${pageNum} Table OCR hatası:`, e.message);
+                  console.error(`[PDF] Sayfa ${pageNum} Hybrid OCR hatası:`, e.message);
                 }
 
                 // Geçici image dosyasını temizle
@@ -791,7 +774,7 @@ except Exception as e:
         // ÖNCELİK 1: Qwen2.5-VL OCR (EN YÜKSEK ÖNCELİK)
         if (!ocrText && this.localQwenVL && config.ocr?.qwenVL?.enabled) {
           try {
-            const qwenResult = await this.localQwenVL.extractFromImage(filePath, 'table');
+            const qwenResult = await this.localQwenVL.extractFromImage(filePath, 'hybrid');
             if (qwenResult.success && qwenResult.text) {
               ocrText = qwenResult.text;
               ocrMetadata = {

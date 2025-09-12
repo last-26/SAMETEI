@@ -83,6 +83,9 @@ class LocalQwenVL {
           case 'table':
             prompt = this.getTablePrompt();
             break;
+          case 'hybrid':
+            prompt = this.getHybridPrompt();
+            break;
           case 'text':
           default:
             prompt = this.getTextPrompt();
@@ -271,6 +274,55 @@ QUALITY STANDARDS:
 - Perfect tab separation between columns
 - Complete table structure preservation
 - Mark uncertain text as [?] if unclear`;
+  }
+
+  /**
+   * Hibrit çıkarma için prompt (hem text hem table)
+   */
+  getHybridPrompt() {
+    return `TASK: Extract ALL content from the image with optimal formatting for both text and tables.
+
+CONTENT DETECTION & FORMATTING:
+1. TABLES: Use TAB character (\\t) between columns, NEWLINE (\\n) between rows
+2. REGULAR TEXT: Use natural paragraph spacing and line breaks
+3. MIXED CONTENT: Preserve both table structure and text flow
+
+FORMATTING RULES:
+- Tables: Column1\\tColumn2\\tColumn3\\n (tab-separated)
+- Text: Natural paragraph breaks with proper spacing
+- Forms: Label: Value format or structured layout
+- Lists: Maintain bullet points or numbering
+
+TURKISH CHARACTER SUPPORT:
+- Perfect preservation: ç, ğ, ı, ö, ş, ü, Ç, Ğ, İ, Ö, Ş, Ü
+- Maintain all accented characters exactly as shown
+- Preserve special punctuation and symbols
+
+SPECIAL CASES:
+- Colored backgrounds: Read text regardless of background color
+- Rotated text: Extract vertical/angled text properly
+- Form fields: Show filled values, leave empty fields blank
+- Checkboxes: □ (empty) or ☑ (checked)
+- Mixed layouts: Maintain spatial relationships
+
+OUTPUT STRUCTURE:
+- Start with main content immediately
+- No introductory text or explanations
+- No markdown formatting or code blocks
+- Preserve original document flow and hierarchy
+- Group related content together
+
+QUALITY STANDARDS:
+- 100% accurate text recognition
+- Complete content extraction
+- Proper format preservation
+- Mark uncertain characters as [?]
+- Mark unreadable sections as [...]
+
+PRIORITY ORDER:
+1. Extract all readable text with perfect accuracy
+2. Maintain proper table formatting where applicable
+3. Preserve document structure and relationships`;
   }
 
   /**
