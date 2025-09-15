@@ -788,30 +788,30 @@ except Exception as e:
               if (imagePath) {
                 console.log(`[PDF] Sayfa ${pageNum}: OCR işlemleri başlatılıyor...`);
                 
-                // 2. Akıllı OCR Sistemi - Form tespit ile dinamik extraction
+                // 2. Basit OCR sistemi - Tek çağrı ile
                 try {
                   const startOcr = Date.now();
                   console.log(`[PDF] Sayfa ${pageNum}: 🔄 OCR başlıyor... (bekleyin, büyük resimler 1-2 dakika sürebilir)`);
                   
-                  // Akıllı form tespit ve optimal OCR stratejisi
-                  const ocrResult = await this.smartOCRWithFormDetection(imagePath);
+                  // Basit OCR çağrısı
+                  const ocrResult = await this.localQwenVL.extractFromImage(imagePath, 'hybrid');
                   const ocrDuration = Date.now() - startOcr;
-                  console.log(`[PDF] Sayfa ${pageNum}: ✅ OCR tamamlandı (${(ocrDuration/1000).toFixed(1)}s) - type: ${ocrResult.detectedType}, textLength: ${ocrResult.text?.length || 0}`);
+                  console.log(`[PDF] Sayfa ${pageNum}: ✅ OCR tamamlandı (${(ocrDuration/1000).toFixed(1)}s) - textLength: ${ocrResult.text?.length || 0}`);
                   
                   if (ocrResult.success && ocrResult.text) {
                     const rawOcrContent = ocrResult.text.trim();
                     const ocrContent = this.cleanOCRText(rawOcrContent); // OCR format koruyucu temizlik
                     
-                    // Minimum uzunluk kontrolü daha esnek yapıldı
-                    if (ocrContent.length > 5) { // 20'den 5'e düşürdük
+                    // Minimum uzunluk kontrolü
+                    if (ocrContent.length > 5) {
                       sources.push({
                         content: ocrContent,
-                        type: `ocr_${ocrResult.detectedType}`,
+                        type: 'ocr_hybrid',
                         source: 'qwen2.5-vl',
                         processingTime: ocrResult.processingTime,
                         tokensUsed: ocrResult.tokensUsed
                       });
-                      console.log(`[PDF] Sayfa ${pageNum}: ✅ ${ocrResult.detectedType} OCR başarılı - ${ocrContent.length} karakter eklendi (${ocrResult.elapsedMs}ms)`);
+                      console.log(`[PDF] Sayfa ${pageNum}: ✅ OCR başarılı - ${ocrContent.length} karakter eklendi`);
                     } else {
                       console.warn(`[PDF] Sayfa ${pageNum}: ⚠️ OCR sonucu çok kısa: "${ocrContent}" (${ocrContent.length} karakter)`);
                     }
@@ -819,7 +819,7 @@ except Exception as e:
                     console.warn(`[PDF] Sayfa ${pageNum}: ⚠️ OCR başarısız - success: ${ocrResult.success}, text var: ${!!ocrResult.text}`);
                   }
                 } catch (e) {
-                  console.error(`[PDF] Sayfa ${pageNum}: ❌ Hybrid OCR hatası:`, e.message);
+                  console.error(`[PDF] Sayfa ${pageNum}: ❌ OCR hatası:`, e.message);
                 }
 
                 // Geçici image dosyasını temizle
@@ -941,20 +941,19 @@ except Exception as e:
         let ocrText = '';
         let ocrMetadata = {};
 
-        // ÖNCELİK 1: Qwen2.5-VL OCR (AKILLI FORM TESPİT İLE)
+        // Qwen2.5-VL OCR (BASİT MOD)
         if (!ocrText && this.localQwenVL && config.ocr?.qwenVL?.enabled) {
           try {
-            const ocrResult = await this.smartOCRWithFormDetection(filePath);
+            const ocrResult = await this.localQwenVL.extractFromImage(filePath, 'hybrid');
             if (ocrResult.success && ocrResult.text) {
               ocrText = this.cleanOCRText(ocrResult.text); // OCR format koruyucu temizlik
               ocrMetadata = {
                 ocrProvider: 'qwen2.5-vl',
                 ocrModel: 'Qwen2.5-VL-3B-Instruct',
                 processingTime: ocrResult.processingTime,
-                tokensUsed: ocrResult.tokensUsed,
-                detectedType: ocrResult.detectedType
+                tokensUsed: ocrResult.tokensUsed
               };
-              console.log(`[Qwen2.5-VL] Görüntü başarılı (${ocrResult.detectedType}): ${ocrText.length} karakter, ${ocrResult.elapsedMs}ms`);
+              console.log(`[Qwen2.5-VL] Görüntü başarılı: ${ocrText.length} karakter`);
             }
           } catch (e) {
             console.error(`[Qwen2.5-VL] Görüntü OCR hatası:`, e.message);
@@ -1103,65 +1102,6 @@ except Exception as e:
     return fieldPatterns.some(pattern => pattern.test(line));
   }
 
-  /**
-   * Akıllı OCR sistemi - Form tespit ile optimal extraction
-   */
-  async smartOCRWithFormDetection(imagePath) {
-    try {
-      console.log(`[Smart-OCR] 🧠 Akıllı form tespit başlıyor...`);
-      
-      // 1. AŞAMA: Hızlı text OCR ile içerik tipini tespit et
-      const quickScanResult = await this.localQwenVL.extractFromImage(imagePath, 'text');
-      
-      if (!quickScanResult.success || !quickScanResult.text) {
-        console.warn(`[Smart-OCR] ⚠️ Hızlı tarama başarısız, hybrid'e fallback`);
-        return await this.localQwenVL.extractFromImage(imagePath, 'hybrid');
-      }
-      
-      const quickText = quickScanResult.text;
-      console.log(`[Smart-OCR] 📄 Hızlı tarama sonucu: ${quickText.substring(0, 100)}...`);
-      
-      // 2. AŞAMA: Form tespiti
-      const isForm = this.isFormContent(quickText);
-      console.log(`[Smart-OCR] 🔍 Form tespiti: ${isForm ? '✅ FORM' : '❌ TABLO/TEXT'}`);
-      
-      let finalResult;
-      
-      if (isForm) {
-        // 3A. FORM TESPİT EDİLDİ - Form-optimized OCR yap
-        console.log(`[Smart-OCR] 📋 Form tespit edildi, özel form OCR uygulanıyor...`);
-        finalResult = await this.localQwenVL.extractFromImage(imagePath, 'form');
-        
-        // Form OCR başarısız olursa text sonucunu kullan
-        if (!finalResult.success) {
-          console.warn(`[Smart-OCR] ⚠️ Form OCR başarısız, text sonucu kullanılıyor`);
-          finalResult = quickScanResult;
-        }
-        
-        finalResult.detectedType = 'form';
-      } else {
-        // 3B. TABLO/TEXT - Hybrid OCR yap
-        console.log(`[Smart-OCR] 📊 Tablo/Text tespit edildi, hybrid OCR uygulanıyor...`);
-        finalResult = await this.localQwenVL.extractFromImage(imagePath, 'hybrid');
-        
-        // Hybrid başarısız olursa text sonucunu kullan
-        if (!finalResult.success) {
-          console.warn(`[Smart-OCR] ⚠️ Hybrid OCR başarısız, text sonucu kullanılıyor`);
-          finalResult = quickScanResult;
-        }
-        
-        finalResult.detectedType = 'hybrid';
-      }
-      
-      console.log(`[Smart-OCR] ✅ Tamamlandı - tip: ${finalResult.detectedType}, uzunluk: ${finalResult.text?.length || 0}`);
-      return finalResult;
-      
-    } catch (error) {
-      console.error(`[Smart-OCR] ❌ Hata:`, error.message);
-      // Hata durumunda basit hybrid OCR'a fallback
-      return await this.localQwenVL.extractFromImage(imagePath, 'hybrid');
-    }
-  }
 
   /**
    * Türkçe metin geliştirme (OCR sonrası)
