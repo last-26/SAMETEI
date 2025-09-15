@@ -34,46 +34,44 @@ logger = logging.getLogger(__name__)
 # Request/Response modelleri
 class OCRRequest(BaseModel):
     image: str  # Base64 encoded image
-    prompt: str = """TASK: Extract table data with PERFECT tab-separated formatting.
+    prompt: str = """TASK: Extract ALL content from the image with intelligent format detection.
 
-CRITICAL FORMATTING RULES:
-1. Use TAB character (\t) to separate each column - MANDATORY
-2. Use NEWLINE (\n) to separate each row - MANDATORY  
-3. NO SPACES between columns - ONLY TABS
-4. Extract ALL table content including headers
+SMART CONTENT DETECTION:
+1. **FORMS**: Vertical field layout (each field on new line)
+2. **TABLES**: Horizontal data layout (TAB-separated columns)
+3. **TEXT**: Natural paragraph flow
+4. **MIXED**: Preserve each content type appropriately
 
-TABLE STRUCTURE:
-- First row: Column headers separated by \t
-- Following rows: Data cells separated by \t
-- Empty cells: Leave empty but keep \t separators
-- Multi-line content within cell: Replace newlines with space
+UNIVERSAL EXTRACTION RULES:
+✅ Read EVERY text element systematically
+✅ Preserve Turkish characters: ç, ğ, ı, ö, ş, ü, Ç, Ğ, İ, Ö, Ş, Ü
+✅ Extract titles, headers, and sections
+✅ Complete document scanning - no text should be missed
 
-TURKISH CHARACTER SUPPORT:
-- Preserve Turkish characters (ç, ğ, ı, ö, ş, ü, Ç, Ğ, İ, Ö, Ş, Ü)
-- Keep all accented characters exactly as shown
+FORM DETECTION & FORMATTING:
+📋 IF FORM DETECTED (field labels, input boxes):
+- Each field label on separate line
+- Vertical layout (no horizontal tables)
+- Preserve field structure and hierarchy
+- Include form titles and sections
 
-SPECIAL CASES:
-- Read text on colored backgrounds
-- Read vertical/rotated text  
-- Preserve numeric values exactly (including dots, commas)
-- Preserve date formats as written
+📊 IF TABLE DETECTED (data rows/columns):
+- Use TAB characters between columns
+- Use NEWLINE between rows
+- Preserve tabular structure
 
-OUTPUT REQUIREMENTS:
-- ONLY the table content with \t and \n separators
-- NO explanations, NO markdown formatting
-- NO code blocks, NO extra text
-- Start directly with the header row
-- End with the last data row
+📝 IF REGULAR TEXT:
+- Natural paragraph breaks
+- Preserve original spacing
 
 QUALITY STANDARDS:
-- 100% accurate text recognition
-- Perfect tab separation between columns
-- Complete table structure preservation
-- Mark uncertain text as [?] if unclear
+- 100% text coverage - don't skip any visible text
+- Exact spelling preservation
+- Appropriate format for content type
+- Mark unclear text as [?] only if truly unreadable
 
-Uncertain character → [?]  
-Unreadable section → [...]"""
-    max_tokens: int = 4096
+CRITICAL: Scan the ENTIRE image area systematically. Every piece of visible text should appear in the output."""
+    max_tokens: int = 2500  # Daha kapsamlı OCR için artırıldı
 
 class OCRResponse(BaseModel):
     success: bool
@@ -211,15 +209,23 @@ async def extract_text(request: OCRRequest, background_tasks: BackgroundTasks):
     start_time = time.time()
 
     try:
+        # GPU memory cleanup (ConnectionReset önleme)
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         logger.info("🔍 OCR isteği işleniyor...")
 
         # Base64'ten görüntüyü decode et
         image_data = base64.b64decode(request.image)
         image = Image.open(io.BytesIO(image_data))
 
-        # Gelişmiş preprocessing - renkli arka plan problemini çöz
+        # 1. IMAGE BOYUT OPTİMİZASYONU (PERFORMANS İÇİN KRİTİK)
+        original_size = image.size
+        image = optimize_image_size(image)
+        logger.info(f"📏 Görüntü boyutu: {original_size} → {image.size}")
+
+        # 2. Gelişmiş preprocessing - renkli arka plan problemini çöz
         image = enhance_for_colored_backgrounds(image)
-        logger.info("Renkli arka plan optimizasyonu uygulandı")
+        logger.info("✨ Renkli arka plan optimizasyonu uygulandı")
 
         # Prompt hazırla
         prompt = request.prompt
@@ -251,12 +257,14 @@ async def extract_text(request: OCRRequest, background_tasks: BackgroundTasks):
         ).to(device)
 
         with torch.no_grad():
+            # QWEN-UYUMLU GENERATION AYARLARI (sadece desteklenen parametreler)
             generated_ids = model.generate(
                 **inputs,
-                max_new_tokens=request.max_tokens,
-                temperature=0.0,
+                max_new_tokens=min(request.max_tokens, 1500),  # Hard limit
                 do_sample=False,
-                num_beams=1,
+                num_beams=1,  # Greedy decoding (en hızlı)
+                repetition_penalty=1.1,  # Tekrar önleme
+                no_repeat_ngram_size=3,  # 3-gram tekrarı engelle
                 eos_token_id=getattr(processor.tokenizer, 'eos_token_id', None),
                 pad_token_id=getattr(processor.tokenizer, 'pad_token_id', None),
             )
@@ -276,7 +284,26 @@ async def extract_text(request: OCRRequest, background_tasks: BackgroundTasks):
         clean_text = clean_output_text(output_text)
         processing_time = time.time() - start_time
 
-        logger.info("%.2f", processing_time)
+        # DETAYLI OCR SONUÇ LOGGING
+        logger.info(f"⏱️  İşlem süresi: {processing_time:.2f}s")
+        logger.info(f"📝 OCR Sonuç Özeti:")
+        logger.info(f"   • Ham metin uzunluğu: {len(output_text)} karakter")
+        logger.info(f"   • Temiz metin uzunluğu: {len(clean_text)} karakter")
+        logger.info(f"   • Satır sayısı: {len(clean_text.splitlines())} satır")
+        logger.info(f"   • İlk 100 karakter: '{clean_text[:100]}...'")
+        
+        # TAM OCR SONUCU LOGGING (DEBUG İÇİN)
+        logger.info("="*50)
+        logger.info("📄 TAM OCR SONUCU:")
+        logger.info("="*50)
+        logger.info(clean_text)
+        logger.info("="*50)
+        logger.info("📤 APP.PY'A GÖNDERİLEN VERİ:")
+        logger.info(f"SUCCESS: {True}")
+        logger.info(f"TEXT LENGTH: {len(clean_text)}")
+        logger.info(f"PROCESSING_TIME: {processing_time:.2f}")
+        logger.info("="*50)
+        
         return OCRResponse(
             success=True,
             text=clean_text,
@@ -292,6 +319,29 @@ async def extract_text(request: OCRRequest, background_tasks: BackgroundTasks):
             error=str(e),
             processing_time=processing_time
         )
+
+def optimize_image_size(image):
+    """Görüntü boyutunu OCR performansı için optimize et"""
+    MAX_PIXELS = 1024 * 1024  # 1MP max (performans için)
+    MIN_PIXELS = 512 * 512    # 0.25MP min (kalite için)
+    
+    current_pixels = image.width * image.height
+    
+    # Çok büyükse küçült
+    if current_pixels > MAX_PIXELS:
+        scale = (MAX_PIXELS / current_pixels) ** 0.5
+        new_size = (int(image.width * scale), int(image.height * scale))
+        image = image.resize(new_size, Image.LANCZOS)
+        logger.info(f"🔽 Görüntü küçültüldü: {current_pixels:,} → {new_size[0]*new_size[1]:,} pixel")
+    
+    # Çok küçükse büyüt
+    elif current_pixels < MIN_PIXELS:
+        scale = (MIN_PIXELS / current_pixels) ** 0.5
+        new_size = (int(image.width * scale), int(image.height * scale))  
+        image = image.resize(new_size, Image.LANCZOS)
+        logger.info(f"🔼 Görüntü büyütüldü: {current_pixels:,} → {new_size[0]*new_size[1]:,} pixel")
+    
+    return image
 
 def enhance_for_colored_backgrounds(image):
     """Renkli arka plan üzerindeki metinleri belirginleştir"""
@@ -357,5 +407,11 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000,
-        log_level="info"
+        log_level="info",
+        # CONNECTION STABILITY İYİLEŞTİRMESİ
+        limit_concurrency=3,  # Eşzamanlı istek limiti (GPU için)
+        limit_max_requests=1000,  # Maksimum istek sayısı
+        timeout_keep_alive=30,  # Keep-alive süresi
+        timeout_graceful_shutdown=60,  # Graceful shutdown
+        access_log=False  # Performans için access log kapalı
     )

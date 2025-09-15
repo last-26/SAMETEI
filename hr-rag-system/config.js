@@ -25,11 +25,22 @@ module.exports = {
 
   // RAG Ayarları (ULTRA OPTIMIZED v2.0 - PERFORMANCE FOCUSED)
   rag: {
-    // === CHUNK OPTİMİZASYONU ===
-    chunkSize: 600, // 400→600 (%50 artış) - Daha zengin context
-    chunkOverlap: 120, // %20 overlap (optimal balance)
+    // === HR-AWARE CHUNK OPTİMİZASYONU ===
+    chunkSize: 400, // HR belgeler için optimal boyut (300-400 token)
+    chunkOverlap: 80, // %20 overlap (50-100 token arası)
     maxContextLength: 8000, // 8K token context limit
     minChunkLength: 80, // Minimum chunk uzunluğu artırıldı
+    
+    // === HR-SPECIFIC CHUNKING AYARLARI ===
+    hrAwareChunking: {
+      enabled: true,
+      structureAware: true, // Başlık/madde yapısını koru
+      listPreservation: true, // Liste yapılarını koru
+      qaPairDetection: true, // Soru-cevap çiftlerini tespit et
+      sectionBoundaries: ['###', '##', '#', 'MADDE', 'BÖLÜM', 'BAŞLIK'], // Bölüm ayırıcıları
+      listPatterns: ['1.', '2.', 'a)', 'b)', '-', '•', '*'], // Liste pattern'ları
+      preserveFormatting: true, // Format koruma (tablolar, form alanları)
+    },
     
     // === RETRIEVAL STRATEJİSİ (PRECISION-FOCUSED) ===
     initialTopK: 20, // İlk retrieval - geniş ağ

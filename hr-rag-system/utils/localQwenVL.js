@@ -12,6 +12,30 @@ class LocalQwenVL {
     this.timeout = 0; // Timeout kaldırıldı (sınırsız bekleme)
     this.maxRetries = 1; // Retry azaltıldı
     this.retryDelay = 1000;
+    
+    // STABILITE ODAKLI CONNECTION AYARLARI (ConnectionResetError önleme)
+    const http = require('http');
+    this.axiosConfig = {
+      timeout: 0, // OCR için sınırsız bekleme
+      headers: {
+        'Connection': 'close',  // Her istek sonrası temiz kapanma
+        'Content-Type': 'application/json',
+        'User-Agent': 'HR-RAG-OCR-Client/1.0',
+        'Keep-Alive': 'timeout=0'  // Keep-alive kapalı
+      },
+      httpAgent: new http.Agent({
+        keepAlive: false,       // Connection pooling kapalı
+        maxSockets: 1,          // Tek socket kullan
+        timeout: 0,             // Socket timeout kaldır
+        freeSocketTimeout: 0,   // Free socket timeout kaldır
+        socketActiveTTL: 0      // Socket TTL kaldır
+      }),
+      maxContentLength: 50 * 1024 * 1024, // 50MB limit
+      maxBodyLength: 50 * 1024 * 1024,     // 50MB limit
+      validateStatus: function (status) {
+        return status < 400; // Sadece 4xx+ errorları reject et
+      }
+    };
   }
 
   /**
@@ -106,10 +130,7 @@ class LocalQwenVL {
       for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
         try {
           const response = await axios.post(`${this.apiUrl}/ocr`, requestData, {
-            timeout: this.timeout || 0, // Timeout kaldırıldı
-            headers: {
-              'Content-Type': 'application/json'
-            }
+            ...this.axiosConfig  // Optimized connection ayarları (headers dahil)
           });
 
           if (response.status === 200) {
@@ -202,42 +223,54 @@ Unreadable section → [...]`;
   }
 
   /**
-   * Form çıkarma için prompt
+   * Form çıkarma için prompt (dikey layout odaklı)
    */
   getFormPrompt() {
-    return `TASK: Extract ALL content from this form document with maximum accuracy.
+    return `TASK: Extract form content with VERTICAL field layout - each field on separate line.
+
+🎯 CRITICAL RULE: NEVER use horizontal table format for forms!
+
+LAYOUT REQUIREMENTS:
+✅ CORRECT - VERTICAL (each field on new line):
+İZİN TALEP FORMU
+T.C Kimlik Numarası
+Adı Soyadı
+Çalışma Yeri / Birimi
+Görevi / Unvanı
+İşe Giriş Tarihi
+
+❌ WRONG - HORIZONTAL (do not use this):
+T.C Kimlik Numarası | Adı Soyadı | Çalışma Yeri
 
 EXTRACTION RULES:
-1. Extract ALL visible text, labels, and field values
-2. Preserve Turkish characters perfectly (ç, ğ, ı, ö, ş, ü, Ç, Ğ, İ, Ö, Ş, Ü)
-3. Show form structure clearly with labels and values
-4. Keep empty fields empty (do not guess or fill)
+1. Each field label goes on a separate line
+2. Empty fields: show label only (no values)
+3. Filled fields: show "Label: Value" format
+4. Preserve Turkish characters: ç, ğ, ı, ö, ş, ü, Ç, Ğ, İ, Ö, Ş, Ü
+5. Form title at the top
 
-FORM ELEMENTS:
-- Field labels: Extract exactly as shown
-- Field values: Extract only if clearly filled
+SPECIAL ELEMENTS:
 - Checkboxes: □ (empty) or ☑ (checked)
-- Signatures: [İmza] if signed, [İmzasız] if empty
-- Dates: Preserve exact format (DD.MM.YYYY or DD/MM/YYYY)
-- Numbers: Keep all digits, dots, and commas exactly
+- Signatures: [İmza] if signed, blank if empty
+- Dates: Keep format (DD.MM.YYYY)
+- Empty areas: Leave blank
 
-LAYOUT PRESERVATION:
-- Maintain visual structure and spacing
-- Group related fields together
-- Separate sections with blank lines
-- Use consistent formatting
+SECTIONS:
+- Main form fields (vertical list)
+- Form text/description (natural paragraphs)
+- Approval section (İşveren Onayı)
 
 OUTPUT FORMAT:
 - Plain text only
-- No explanations or comments
-- No markdown or code blocks
-- Preserve original Turkish text exactly
+- No markdown, no tables, no pipes (|)
+- Start with form title
+- Each field on new line
+- Natural paragraph breaks for text sections
 
-QUALITY STANDARDS:
-- Only extract text you can read with 100% confidence
-- Mark uncertain characters as [?]
-- Mark unreadable sections as [...]
-- Prioritize accuracy over completeness`;
+QUALITY:
+- 100% accurate Turkish text
+- Mark unclear text as [?]
+- Priority: Accuracy over speed`;
   }
 
   /**
@@ -277,52 +310,66 @@ QUALITY STANDARDS:
   }
 
   /**
-   * Hibrit çıkarma için prompt (hem text hem table)
+   * Hibrit çıkarma için prompt (hem text hem table hem form)
    */
   getHybridPrompt() {
-    return `TASK: Extract ALL content from the image with optimal formatting for both text and tables.
+    return `TASK: Extract ALL content from the image with intelligent formatting detection.
 
-CONTENT DETECTION & FORMATTING:
-1. TABLES: Use TAB character (\\t) between columns, NEWLINE (\\n) between rows
-2. REGULAR TEXT: Use natural paragraph spacing and line breaks
-3. MIXED CONTENT: Preserve both table structure and text flow
+SMART CONTENT DETECTION:
+1. **FORMS**: Vertical field layout (each field on new line)
+2. **TABLES**: Horizontal data layout (TAB-separated columns)
+3. **TEXT**: Natural paragraph flow
+4. **MIXED**: Preserve each content type appropriately
 
-FORMATTING RULES:
-- Tables: Column1\\tColumn2\\tColumn3\\n (tab-separated)
-- Text: Natural paragraph breaks with proper spacing
-- Forms: Label: Value format or structured layout
-- Lists: Maintain bullet points or numbering
+FORMATTING BY CONTENT TYPE:
+
+📋 FORMS (İzin Talep Formu, başvuru formları):
+- Each field label on separate line
+- Field format: "Label:" or just "Label"
+- Empty fields: Leave blank line or show field name only
+- Example:
+  FORM TITLE
+  Field 1 Name
+  Field 2 Name
+  Field 3 Name
+
+📊 TABLES (veri tabloları, çizelgeler):  
+- Use TAB (\\t) between columns
+- Use NEWLINE (\\n) between rows
+- Example: Col1\\tCol2\\tCol3\\nData1\\tData2\\tData3
+
+📝 REGULAR TEXT:
+- Natural paragraph breaks
+- Preserve original spacing
+
+FORM DETECTION CRITERIA:
+- Contains "FORM", "FORMU", "TALEP", "BAŞVURU" in title
+- Has vertical field layout structure
+- Shows input fields or boxes
+- Has form-like appearance
+
+TABLE DETECTION CRITERIA:
+- Clear column/row structure
+- Multiple data entries
+- Tabular data presentation
 
 TURKISH CHARACTER SUPPORT:
 - Perfect preservation: ç, ğ, ı, ö, ş, ü, Ç, Ğ, İ, Ö, Ş, Ü
-- Maintain all accented characters exactly as shown
-- Preserve special punctuation and symbols
+- Keep all accented characters exactly
 
-SPECIAL CASES:
-- Colored backgrounds: Read text regardless of background color
-- Rotated text: Extract vertical/angled text properly
-- Form fields: Show filled values, leave empty fields blank
+SPECIAL ELEMENTS:
 - Checkboxes: □ (empty) or ☑ (checked)
-- Mixed layouts: Maintain spatial relationships
+- Signatures: [İmza] if signed, blank if empty
+- Dates: Keep exact format (DD.MM.YYYY)
 
-OUTPUT STRUCTURE:
-- Start with main content immediately
-- No introductory text or explanations
-- No markdown formatting or code blocks
-- Preserve original document flow and hierarchy
-- Group related content together
+OUTPUT REQUIREMENTS:
+- Start with content immediately
+- No explanations or markdown
+- Preserve document hierarchy
+- Group related sections
 
-QUALITY STANDARDS:
-- 100% accurate text recognition
-- Complete content extraction
-- Proper format preservation
-- Mark uncertain characters as [?]
-- Mark unreadable sections as [...]
-
-PRIORITY ORDER:
-1. Extract all readable text with perfect accuracy
-2. Maintain proper table formatting where applicable
-3. Preserve document structure and relationships`;
+CRITICAL: For FORMS, use VERTICAL layout (newlines between fields).
+For TABLES, use HORIZONTAL layout (tabs between columns).`;
   }
 
   /**

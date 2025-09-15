@@ -128,27 +128,53 @@ class TextProcessor {
           currentTokens = 0;
         }
         
-        // Uzun cümleyi kelime bazında böl
-        const words = sentence.split(' ');
-        let wordChunk = '';
-        let wordTokens = 0;
-        
-        for (const word of words) {
-          const wordTokenCount = this.getTokenCount(word);
-          if (wordTokens + wordTokenCount > this.chunkSize) {
-            if (wordChunk) {
-              chunks.push(this.createChunk(wordChunk, metadata, chunks.length));
+        // Tablo içeriği ise farklı strateji uygula
+        if (this.isTableContent(sentence)) {
+          // Tablo içeriği için satır bazlı bölme
+          const tableLines = sentence.split('\n');
+          let lineChunk = '';
+          let lineTokens = 0;
+          
+          for (const line of tableLines) {
+            const lineTokenCount = this.getTokenCount(line);
+            if (lineTokens + lineTokenCount > this.chunkSize) {
+              if (lineChunk) {
+                chunks.push(this.createChunk(lineChunk, metadata, chunks.length));
+              }
+              lineChunk = line;
+              lineTokens = lineTokenCount;
+            } else {
+              lineChunk += (lineChunk ? '\n' : '') + line;
+              lineTokens += lineTokenCount;
             }
-            wordChunk = word;
-            wordTokens = wordTokenCount;
-          } else {
-            wordChunk += (wordChunk ? ' ' : '') + word;
-            wordTokens += wordTokenCount;
           }
-        }
-        
-        if (wordChunk) {
-          chunks.push(this.createChunk(wordChunk, metadata, chunks.length));
+          
+          if (lineChunk) {
+            chunks.push(this.createChunk(lineChunk, metadata, chunks.length));
+          }
+        } else {
+          // Normal metin için kelime bazlı bölme
+          const words = sentence.split(' ');
+          let wordChunk = '';
+          let wordTokens = 0;
+          
+          for (const word of words) {
+            const wordTokenCount = this.getTokenCount(word);
+            if (wordTokens + wordTokenCount > this.chunkSize) {
+              if (wordChunk) {
+                chunks.push(this.createChunk(wordChunk, metadata, chunks.length));
+              }
+              wordChunk = word;
+              wordTokens = wordTokenCount;
+            } else {
+              wordChunk += (wordChunk ? ' ' : '') + word;
+              wordTokens += wordTokenCount;
+            }
+          }
+          
+          if (wordChunk) {
+            chunks.push(this.createChunk(wordChunk, metadata, chunks.length));
+          }
         }
         continue;
       }
@@ -159,10 +185,15 @@ class TextProcessor {
         
         // Overlap için önceki chunk'ın son kısmını al
         const overlapSentences = this.getOverlapContent(currentChunk);
-        currentChunk = overlapSentences + ' ' + sentence;
+        
+        // Tablo içeriği için farklı birleştirme stratejisi
+        const separator = this.isTableContent(sentence) || this.isTableContent(overlapSentences) ? '\n' : ' ';
+        currentChunk = overlapSentences + separator + sentence;
         currentTokens = this.getTokenCount(currentChunk);
       } else {
-        currentChunk += (currentChunk ? ' ' : '') + sentence;
+        // Tablo içeriği için farklı birleştirme stratejisi
+        const separator = this.isTableContent(sentence) || this.isTableContent(currentChunk) ? '\n' : ' ';
+        currentChunk += (currentChunk ? separator : '') + sentence;
         currentTokens += sentenceTokens;
       }
     }
@@ -176,10 +207,15 @@ class TextProcessor {
   }
 
   /**
-   * Cümlelere ayır
+   * Cümlelere ayır (tablo formatını koruyan)
    */
   splitIntoSentences(text) {
-    // Basit cümle ayırma (Türkçe için iyileştirilebilir)
+    // Tablo içeriği tespit et
+    if (this.hasTableContent(text)) {
+      return this.splitTableAwareText(text);
+    }
+    
+    // Normal metin için basit cümle ayırma (Türkçe için iyileştirilebilir)
     // T.C formatını korumak için önce geçici değiştir
     const tempText = text.replace(/T\.C/g, 'T_TEMP_C');
     
@@ -189,6 +225,104 @@ class TextProcessor {
       .filter(s => s.length > 0);
     
     return sentences;
+  }
+  
+  /**
+   * Tablo içeriği tespit et
+   */
+  hasTableContent(text) {
+    if (!text) return false;
+    
+    // Form ise tablo değil
+    if (this.isFormContent(text)) return false;
+    
+    // TAB karakteri varlığını kontrol et
+    const hasTabChars = text.includes('\t');
+    
+    // Çoklu satırda TAB karakteri varsa tablo muhtemel
+    if (hasTabChars) {
+      const lines = text.split('\n');
+      let tabLines = 0;
+      for (const line of lines) {
+        if (line.includes('\t')) {
+          tabLines++;
+        }
+      }
+      // En az 2 satırda TAB varsa tablo
+      return tabLines >= 2;
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Tablo formatını koruyarak metni böl
+   */
+  splitTableAwareText(text) {
+    const lines = text.split('\n');
+    const chunks = [];
+    let currentTableBlock = '';
+    let inTable = false;
+    
+    for (const line of lines) {
+      const lineHasTabs = line.includes('\t');
+      
+      if (lineHasTabs) {
+        // Tablo satırı
+        if (!inTable && currentTableBlock) {
+          // Önceki normal metni ekle
+          chunks.push(...this.splitNormalText(currentTableBlock));
+          currentTableBlock = '';
+        }
+        currentTableBlock += (currentTableBlock ? '\n' : '') + line;
+        inTable = true;
+      } else {
+        // Normal metin satırı
+        if (inTable && currentTableBlock) {
+          // Tablo bloğunu ekle (bütün olarak)
+          chunks.push(currentTableBlock);
+          currentTableBlock = '';
+        }
+        currentTableBlock += (currentTableBlock ? '\n' : '') + line;
+        inTable = false;
+      }
+    }
+    
+    // Son bloğu ekle
+    if (currentTableBlock) {
+      if (inTable) {
+        chunks.push(currentTableBlock);
+      } else {
+        chunks.push(...this.splitNormalText(currentTableBlock));
+      }
+    }
+    
+    return chunks.filter(chunk => chunk.trim().length > 0);
+  }
+  
+  /**
+   * Normal metni cümlelere böl
+   */
+  splitNormalText(text) {
+    // T.C formatını korumak için önce geçici değiştir
+    const tempText = text.replace(/T\.C/g, 'T_TEMP_C');
+    
+    const sentences = tempText
+      .split(/[.!?]+/)  // Sadece noktalama ile böl (newline'ı koruyoruz)
+      .map(s => s.trim().replace(/T_TEMP_C/g, 'T.C'))
+      .filter(s => s.length > 0);
+    
+    return sentences;
+  }
+  
+  /**
+   * Text parçasının tablo içeriği olup olmadığını kontrol et
+   */
+  isTableContent(text) {
+    if (!text || typeof text !== 'string') return false;
+    
+    // Form içeriği değilse ve TAB içeriyorsa tablo
+    return text.includes('\t') && !this.isFormContent(text);
   }
 
   /**
@@ -258,6 +392,7 @@ class TextProcessor {
       }
       
       const outputPath = path.join(tempDir, `temp_page${pageNumber}_${Date.now()}.png`);
+      console.log(`[PDF→IMG] Sayfa ${pageNumber} image'a çevriliyor: ${path.basename(outputPath)}`);
       
       // Python ile PDF'i image'a çevir
       const pythonScript = `
@@ -275,8 +410,8 @@ output_path = sys.argv[2]
 page_num = int(sys.argv[3]) if len(sys.argv) > 3 else 1
 
 try:
-    # Belirtilen sayfayı PNG'ye çevir
-    images = convert_from_path(pdf_path, first_page=page_num, last_page=page_num, dpi=300)
+    # Belirtilen sayfayı PNG'ye çevir (DPI düşürüldü: performans optimizasyonu)
+    images = convert_from_path(pdf_path, first_page=page_num, last_page=page_num, dpi=150)
     if images:
         images[0].save(output_path, 'PNG')
         print(output_path)
@@ -306,15 +441,19 @@ except Exception as e:
             fs.unlinkSync(tempScriptPath);
           }
           
+          console.log(`[PDF→IMG] Python işlemi tamamlandı - kod: ${code}, çıktı: "${output.trim()}"`);
+          
           if (code === 0 && output.trim() && !output.includes('ERROR')) {
             const imagePath = output.trim();
             if (fs.existsSync(imagePath)) {
+              console.log(`[PDF→IMG] ✅ Sayfa ${pageNumber} image başarıyla oluşturuldu: ${path.basename(imagePath)}`);
               resolve(imagePath);
             } else {
+              console.error(`[PDF→IMG] ❌ Image dosyası oluşturulamadı: ${imagePath}`);
               resolve(null);
             }
           } else {
-            console.error('[PDF to Image] Python hatası:', output);
+            console.error(`[PDF→IMG] ❌ Python hatası (kod: ${code}):`, output);
             resolve(null);
           }
         });
@@ -356,19 +495,32 @@ except Exception as e:
    * Birden fazla metin kaynağını birleştir ve duplicateları temizle
    */
   mergeDedupedTexts(sources) {
-    if (!sources || sources.length === 0) return [];
-    if (sources.length === 1) return sources;
+    console.log(`[Dedup] ${sources.length} kaynak duplicate kontrolünde...`);
+    
+    if (!sources || sources.length === 0) {
+      console.log(`[Dedup] Boş kaynak listesi`);
+      return [];
+    }
+    if (sources.length === 1) {
+      console.log(`[Dedup] Tek kaynak, duplicate kontrolü atlandı`);
+      return sources;
+    }
 
     const uniqueTexts = [];
     const processedTexts = [];
 
-    for (const source of sources) {
-      if (!source.content || source.content.trim().length < 20) continue;
+    for (const [index, source] of sources.entries()) {
+      console.log(`[Dedup] Kaynak ${index + 1}/${sources.length}: ${source.type} (${source.content?.length || 0} karakter)`);
+      
+      if (!source.content || source.content.trim().length < 5) { // 20'den 5'e düşürüldü
+        console.warn(`[Dedup] ⚠️ Kaynak ${index + 1} çok kısa, atlandı: "${source.content?.substring(0, 50)}..."`);
+        continue;
+      }
 
       let isDuplicate = false;
       for (const existing of processedTexts) {
         if (this.isDuplicateText(source.content, existing.content)) {
-          console.log(`[Duplicate] ${source.type} içeriği ${existing.type} ile benzer, atlandı`);
+          console.log(`[Dedup] 🔄 Kaynak ${index + 1} (${source.type}) duplicate → ${existing.type} ile benzer, atlandı`);
           isDuplicate = true;
           break;
         }
@@ -377,10 +529,11 @@ except Exception as e:
       if (!isDuplicate) {
         uniqueTexts.push(source);
         processedTexts.push(source);
-        console.log(`[Unique] ${source.type} içeriği eklendi (${source.content.length} karakter)`);
+        console.log(`[Dedup] ✅ Kaynak ${index + 1} (${source.type}) benzersiz → eklendi (${source.content.length} karakter)`);
       }
     }
 
+    console.log(`[Dedup] 🎯 Sonuç: ${sources.length} → ${uniqueTexts.length} benzersiz kaynak`);
     return uniqueTexts;
   }
 
@@ -586,7 +739,7 @@ except Exception as e:
       }
       case 'txt': {
         const txtContent = fs.readFileSync(filePath, 'utf-8');
-        return this.chunkText(this.cleanText(txtContent), {
+        return this.hrAwareChunkText(this.cleanText(txtContent), {
           ...metadata,
           source: path.basename(filePath),
           type: 'text_document'
@@ -635,21 +788,38 @@ except Exception as e:
               if (imagePath) {
                 console.log(`[PDF] Sayfa ${pageNum}: OCR işlemleri başlatılıyor...`);
                 
-                // 2. Hybrid OCR (tek çağrı ile hem text hem table içeriği)
+                // 2. Akıllı OCR Sistemi - Form tespit ile dinamik extraction
                 try {
-                  const hybridOcrResult = await this.localQwenVL.extractFromImage(imagePath, 'hybrid');
-                  if (hybridOcrResult.success && hybridOcrResult.text && hybridOcrResult.text.length > 20) {
-                    sources.push({
-                      content: hybridOcrResult.text.trim(),
-                      type: 'ocr_hybrid',
-                      source: 'qwen2.5-vl',
-                      processingTime: hybridOcrResult.processingTime,
-                      tokensUsed: hybridOcrResult.tokensUsed
-                    });
-                    console.log(`[PDF] Sayfa ${pageNum}: Hybrid OCR tamamlandı (${hybridOcrResult.text.length} karakter, ${hybridOcrResult.elapsedMs}ms)`);
+                  const startOcr = Date.now();
+                  console.log(`[PDF] Sayfa ${pageNum}: 🔄 OCR başlıyor... (bekleyin, büyük resimler 1-2 dakika sürebilir)`);
+                  
+                  // Akıllı form tespit ve optimal OCR stratejisi
+                  const ocrResult = await this.smartOCRWithFormDetection(imagePath);
+                  const ocrDuration = Date.now() - startOcr;
+                  console.log(`[PDF] Sayfa ${pageNum}: ✅ OCR tamamlandı (${(ocrDuration/1000).toFixed(1)}s) - type: ${ocrResult.detectedType}, textLength: ${ocrResult.text?.length || 0}`);
+                  
+                  if (ocrResult.success && ocrResult.text) {
+                    const rawOcrContent = ocrResult.text.trim();
+                    const ocrContent = this.cleanOCRText(rawOcrContent); // OCR format koruyucu temizlik
+                    
+                    // Minimum uzunluk kontrolü daha esnek yapıldı
+                    if (ocrContent.length > 5) { // 20'den 5'e düşürdük
+                      sources.push({
+                        content: ocrContent,
+                        type: `ocr_${ocrResult.detectedType}`,
+                        source: 'qwen2.5-vl',
+                        processingTime: ocrResult.processingTime,
+                        tokensUsed: ocrResult.tokensUsed
+                      });
+                      console.log(`[PDF] Sayfa ${pageNum}: ✅ ${ocrResult.detectedType} OCR başarılı - ${ocrContent.length} karakter eklendi (${ocrResult.elapsedMs}ms)`);
+                    } else {
+                      console.warn(`[PDF] Sayfa ${pageNum}: ⚠️ OCR sonucu çok kısa: "${ocrContent}" (${ocrContent.length} karakter)`);
+                    }
+                  } else {
+                    console.warn(`[PDF] Sayfa ${pageNum}: ⚠️ OCR başarısız - success: ${ocrResult.success}, text var: ${!!ocrResult.text}`);
                   }
                 } catch (e) {
-                  console.error(`[PDF] Sayfa ${pageNum} Hybrid OCR hatası:`, e.message);
+                  console.error(`[PDF] Sayfa ${pageNum}: ❌ Hybrid OCR hatası:`, e.message);
                 }
 
                 // Geçici image dosyasını temizle
@@ -665,7 +835,7 @@ except Exception as e:
               // 4. Benzersiz içerikleri chunk'la
               let pageChunkCount = 0;
               for (const source of uniqueSources) {
-                const chunks = this.chunkText(source.content, {
+                const chunks = this.hrAwareChunkText(source.content, {
                   ...metadata,
                   source: path.basename(filePath),
                   type: 'pdf_document',
@@ -691,7 +861,7 @@ except Exception as e:
               // Hata durumunda normal metni kullan
               const pageText = pageTexts[pageNum.toString()];
               if (pageText && pageText.length > 10) {
-                const textChunks = this.chunkText(this.cleanText(pageText), {
+                const textChunks = this.hrAwareChunkText(this.cleanText(pageText), {
                   ...metadata,
                   source: path.basename(filePath),
                   type: 'pdf_document',
@@ -708,7 +878,7 @@ except Exception as e:
             // Normal sayfa: Direkt metin işle
             const pageText = pageTexts[pageNum.toString()];
             if (pageText && pageText.length > 10) {
-              const textChunks = this.chunkText(this.cleanText(pageText), {
+              const textChunks = this.hrAwareChunkText(this.cleanText(pageText), {
                 ...metadata,
                 source: path.basename(filePath),
                 type: 'pdf_document',
@@ -754,7 +924,7 @@ except Exception as e:
         const dataBuffer = fs.readFileSync(filePath);
         const result = await mammoth.extractRawText({ buffer: dataBuffer });
         const text = this.cleanText(result.value || '');
-        return this.chunkText(text, {
+        return this.hrAwareChunkText(text, {
           ...metadata,
           source: path.basename(filePath),
           type: 'docx_document'
@@ -771,19 +941,20 @@ except Exception as e:
         let ocrText = '';
         let ocrMetadata = {};
 
-        // ÖNCELİK 1: Qwen2.5-VL OCR (EN YÜKSEK ÖNCELİK)
+        // ÖNCELİK 1: Qwen2.5-VL OCR (AKILLI FORM TESPİT İLE)
         if (!ocrText && this.localQwenVL && config.ocr?.qwenVL?.enabled) {
           try {
-            const qwenResult = await this.localQwenVL.extractFromImage(filePath, 'hybrid');
-            if (qwenResult.success && qwenResult.text) {
-              ocrText = qwenResult.text;
+            const ocrResult = await this.smartOCRWithFormDetection(filePath);
+            if (ocrResult.success && ocrResult.text) {
+              ocrText = this.cleanOCRText(ocrResult.text); // OCR format koruyucu temizlik
               ocrMetadata = {
                 ocrProvider: 'qwen2.5-vl',
                 ocrModel: 'Qwen2.5-VL-3B-Instruct',
-                processingTime: qwenResult.processingTime,
-                tokensUsed: qwenResult.tokensUsed
+                processingTime: ocrResult.processingTime,
+                tokensUsed: ocrResult.tokensUsed,
+                detectedType: ocrResult.detectedType
               };
-              console.log(`[Qwen2.5-VL] Görüntü başarılı: ${ocrText.length} karakter, ${qwenResult.elapsedMs}ms`);
+              console.log(`[Qwen2.5-VL] Görüntü başarılı (${ocrResult.detectedType}): ${ocrText.length} karakter, ${ocrResult.elapsedMs}ms`);
             }
           } catch (e) {
             console.error(`[Qwen2.5-VL] Görüntü OCR hatası:`, e.message);
@@ -813,7 +984,7 @@ except Exception as e:
   }
 
   /**
-   * Text temizleme
+   * Text temizleme (Normal belgeler için)
    */
   cleanText(text) {
     return text
@@ -824,6 +995,172 @@ except Exception as e:
       .replace(/\t/g, ' ')              // Tab karakterleri
       .replace(/T\.C/g, 'T.C')          // T.C formatını koru
       .trim();
+  }
+
+  /**
+   * OCR Text temizleme (Format koruyucu)
+   */
+  cleanOCRText(text) {
+    if (!text) return text;
+    
+    console.log('[OCR-Clean] OCR format koruyucu temizlik başlıyor...');
+    
+    let cleaned = text
+      .replace(/\r\n/g, '\n')           // Windows satır sonları
+      .replace(/\r/g, '\n')             // Mac satır sonları  
+      .replace(/\n{4,}/g, '\n\n\n')     // 4+ boş satır → 3 boş satır
+      .replace(/T\.C/g, 'T.C')          // T.C formatını koru
+      .trim();
+    
+    // Form içeriği tespiti ve düzeltmesi (tablo formatından önce!)
+    if (this.isFormContent(cleaned)) {
+      console.log('[OCR-Clean] Form içeriği tespit edildi, dikey format uygulanıyor...');
+      cleaned = this.fixFormFormatting(cleaned);
+    } else {
+      // Tablo formatı düzenlemesi (sadece form değilse)
+      cleaned = this.cleanTableFormat(cleaned);
+    }
+    
+    console.log('[OCR-Clean] ✅ OCR temizlik tamamlandı - format korundu');
+    return cleaned;
+  }
+  
+  /**
+   * Form içeriği tespit et
+   */
+  isFormContent(text) {
+    if (!text) return false;
+    
+    const formIndicators = [
+      /FORM/i, /FORMU/i, /TALEP/i, /BAŞVURU/i,
+      /T\.C.*Kimlik/i, /Adı.*Soyadı/i,
+      /İzin.*Türü/i, /Çalışma.*Yeri/i,
+      /İmza/i, /Tarih.*:/i
+    ];
+    
+    // En az 2 form göstergesi varsa form olarak kabul et
+    let matches = 0;
+    for (const indicator of formIndicators) {
+      if (indicator.test(text)) {
+        matches++;
+      }
+    }
+    
+    return matches >= 2;
+  }
+  
+  /**
+   * Form formatını düzelt (yataydan dikeye)
+   */
+  fixFormFormatting(text) {
+    let fixed = text;
+    
+    // Tab-separated form fields'ları newline'a çevir
+    const lines = fixed.split('\n');
+    const fixedLines = [];
+    
+    for (const line of lines) {
+      if (line.includes('\t') && this.looksLikeFormFields(line)) {
+        // Form alanlarını tab'dan ayır ve her birini yeni satıra koy
+        const fields = line.split('\t')
+          .map(field => field.trim())
+          .filter(field => field.length > 0);
+        
+        // Boş veya sadece çizgi içeren alanları filtrele
+        const meaningfulFields = fields.filter(field => 
+          field.length > 0 && 
+          !field.match(/^-+$/) && 
+          !field.match(/^_+$/)
+        );
+        
+        fixedLines.push(...meaningfulFields);
+      } else {
+        fixedLines.push(line);
+      }
+    }
+    
+    return fixedLines.join('\n');
+  }
+  
+  /**
+   * Satırın form alanları gibi göründüğünü kontrol et
+   */
+  looksLikeFormFields(line) {
+    if (!line) return false;
+    
+    const fieldPatterns = [
+      /Kimlik.*Numaras[ıi]/i,
+      /Ad[ıi].*Soyad[ıi]/i,
+      /Çal[ıi]şma.*Yeri/i,
+      /G[oö]revi/i,
+      /Telefon/i,
+      /İzin.*T[uü]r[uü]/i,
+      /Tarih/i,
+      /S[uü]resi/i,
+      /Adres/i
+    ];
+    
+    return fieldPatterns.some(pattern => pattern.test(line));
+  }
+
+  /**
+   * Akıllı OCR sistemi - Form tespit ile optimal extraction
+   */
+  async smartOCRWithFormDetection(imagePath) {
+    try {
+      console.log(`[Smart-OCR] 🧠 Akıllı form tespit başlıyor...`);
+      
+      // 1. AŞAMA: Hızlı text OCR ile içerik tipini tespit et
+      const quickScanResult = await this.localQwenVL.extractFromImage(imagePath, 'text');
+      
+      if (!quickScanResult.success || !quickScanResult.text) {
+        console.warn(`[Smart-OCR] ⚠️ Hızlı tarama başarısız, hybrid'e fallback`);
+        return await this.localQwenVL.extractFromImage(imagePath, 'hybrid');
+      }
+      
+      const quickText = quickScanResult.text;
+      console.log(`[Smart-OCR] 📄 Hızlı tarama sonucu: ${quickText.substring(0, 100)}...`);
+      
+      // 2. AŞAMA: Form tespiti
+      const isForm = this.isFormContent(quickText);
+      console.log(`[Smart-OCR] 🔍 Form tespiti: ${isForm ? '✅ FORM' : '❌ TABLO/TEXT'}`);
+      
+      let finalResult;
+      
+      if (isForm) {
+        // 3A. FORM TESPİT EDİLDİ - Form-optimized OCR yap
+        console.log(`[Smart-OCR] 📋 Form tespit edildi, özel form OCR uygulanıyor...`);
+        finalResult = await this.localQwenVL.extractFromImage(imagePath, 'form');
+        
+        // Form OCR başarısız olursa text sonucunu kullan
+        if (!finalResult.success) {
+          console.warn(`[Smart-OCR] ⚠️ Form OCR başarısız, text sonucu kullanılıyor`);
+          finalResult = quickScanResult;
+        }
+        
+        finalResult.detectedType = 'form';
+      } else {
+        // 3B. TABLO/TEXT - Hybrid OCR yap
+        console.log(`[Smart-OCR] 📊 Tablo/Text tespit edildi, hybrid OCR uygulanıyor...`);
+        finalResult = await this.localQwenVL.extractFromImage(imagePath, 'hybrid');
+        
+        // Hybrid başarısız olursa text sonucunu kullan
+        if (!finalResult.success) {
+          console.warn(`[Smart-OCR] ⚠️ Hybrid OCR başarısız, text sonucu kullanılıyor`);
+          finalResult = quickScanResult;
+        }
+        
+        finalResult.detectedType = 'hybrid';
+      }
+      
+      console.log(`[Smart-OCR] ✅ Tamamlandı - tip: ${finalResult.detectedType}, uzunluk: ${finalResult.text?.length || 0}`);
+      return finalResult;
+      
+    } catch (error) {
+      console.error(`[Smart-OCR] ❌ Hata:`, error.message);
+      // Hata durumunda basit hybrid OCR'a fallback
+      return await this.localQwenVL.extractFromImage(imagePath, 'hybrid');
+    }
   }
 
   /**
@@ -857,8 +1194,8 @@ except Exception as e:
       enhanced = enhanced.replace(new RegExp(wrong, 'g'), correct);
     }
 
-    // Tablo yapısını koruma - | karakterlerini düzenle
-    enhanced = enhanced.replace(/\s*\|\s*/g, ' | ');
+    // TABLO FORMAT DÜZELTMESİ - OCR sonrası temizlik (önce table format düzelt)
+    enhanced = this.cleanTableFormat(enhanced);
     
     // Tarih formatlarını düzelt (OCR'da bozulan O ve I karakterleri)
     enhanced = enhanced.replace(/O(\d)/g, '0$1');  // O2 -> 02
@@ -881,6 +1218,288 @@ except Exception as e:
     enhanced = enhanced.replace(/İŞVEREN ONAYI/g, 'İŞVEREN ONAYI');
     
     return enhanced;
+  }
+
+  /**
+   * OCR sonrası tablo formatını düzenle
+   */
+  cleanTableFormat(text) {
+    if (!text) return text;
+    
+    let cleaned = text;
+    
+    // 1. Gereksiz | karakterlerini temizle (OCR artifacts)
+    cleaned = cleaned.replace(/\|\s*\|\s*\|/g, '|'); // ||| → |
+    cleaned = cleaned.replace(/\|\s*\|/g, '|'); // || → |
+    cleaned = cleaned.replace(/^\s*\|\s*/gm, ''); // Başlangıçtaki |
+    cleaned = cleaned.replace(/\s*\|\s*$/gm, ''); // Sondaki |
+    
+    // 2. OCR'dan gelen bozuk table separatorları düzelt
+    cleaned = cleaned.replace(/\s*\|\s*/g, '\t'); // | → TAB
+    
+    // 3. Çoklu TAB'ları tek TAB'a çevir
+    cleaned = cleaned.replace(/\t+/g, '\t');
+    
+    // 4. Boş satırları temizle (sadece TAB/space içerenler)
+    cleaned = cleaned.replace(/^[\t\s]*$/gm, '');
+    
+    // 5. Çoklu newline'ları temizle
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+    
+    console.log(`[TableFormat] OCR tablo formatı temizlendi`);
+    return cleaned.trim();
+  }
+
+  /**
+   * HR-AWARE GELIŞMIŞ CHUNKLAMA (Kullanıcı önerileri uygulandı)
+   * - Başlık/madde bazlı chunklama
+   * - Liste yapılarını koruma
+   * - Q&A çiftleri tespit etme
+   * - Recursive chunklama
+   */
+  hrAwareChunkText(text, metadata = {}) {
+    const config = require('../config');
+    const hrConfig = config.rag.hrAwareChunking;
+    
+    if (!hrConfig.enabled) {
+      // HR-aware chunklama kapalıysa normal chunklama kullan
+      return this.chunkText(text, metadata);
+    }
+    
+    console.log(`[HR-Chunking] Gelişmiş HR-aware chunklama başlatılıyor...`);
+    
+    const chunks = [];
+    
+    // 1. Q&A Çiftlerini Tespit Et
+    if (hrConfig.qaPairDetection) {
+      const qaPairs = this.detectQAPairs(text);
+      if (qaPairs.length > 0) {
+        console.log(`[HR-Chunking] ${qaPairs.length} Q&A çifti tespit edildi`);
+        for (const [index, qa] of qaPairs.entries()) {
+          chunks.push(this.createChunk(qa, {
+            ...metadata,
+            type: 'qa_pair',
+            qaIndex: index
+          }, chunks.length));
+        }
+        return chunks;
+      }
+    }
+    
+    // 2. Yapısal Chunklama (Başlık/Bölüm Bazlı)
+    if (hrConfig.structureAware) {
+      const structuredChunks = this.structuralChunking(text, metadata, hrConfig);
+      if (structuredChunks.length > 0) {
+        return structuredChunks;
+      }
+    }
+    
+    // 3. Fallback: Gelişmiş Cümle Bazlı Chunklama
+    return this.enhancedSentenceChunking(text, metadata, hrConfig);
+  }
+
+  /**
+   * Q&A çiftlerini tespit et
+   */
+  detectQAPairs(text) {
+    const qaPairs = [];
+    const lines = text.split('\n');
+    
+    let currentQ = '';
+    let currentA = '';
+    let inQA = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      // Soru pattern'ları
+      const questionPatterns = [
+        /^S\d*[\):]?\s*(.+\?)/i, // S1) Soru?
+        /^Soru\s*\d*[\):]?\s*(.+)/i, // Soru 1: 
+        /^Q\d*[\):]?\s*(.+)/i, // Q1) 
+        /^\d+\.\s*(.+\?)/i, // 1. Soru?
+      ];
+      
+      // Cevap pattern'ları
+      const answerPatterns = [
+        /^C\d*[\):]?\s*(.+)/i, // C1) Cevap
+        /^Cevap\s*\d*[\):]?\s*(.+)/i, // Cevap 1:
+        /^A\d*[\):]?\s*(.+)/i, // A1)
+        /^Yanıt\s*\d*[\):]?\s*(.+)/i, // Yanıt:
+      ];
+      
+      let isQuestion = questionPatterns.some(pattern => pattern.test(line));
+      let isAnswer = answerPatterns.some(pattern => pattern.test(line));
+      
+      if (isQuestion) {
+        // Önceki Q&A çiftini tamamla
+        if (currentQ && currentA) {
+          qaPairs.push(`SORU: ${currentQ}\n\nCEVAP: ${currentA}`);
+        }
+        currentQ = line;
+        currentA = '';
+        inQA = true;
+      } else if (isAnswer && currentQ) {
+        currentA = line;
+      } else if (inQA && line.length > 0) {
+        // Multi-line cevap
+        if (currentA) {
+          currentA += '\n' + line;
+        } else if (currentQ && !isQuestion) {
+          currentA = line;
+        }
+      }
+    }
+    
+    // Son Q&A çiftini ekle
+    if (currentQ && currentA) {
+      qaPairs.push(`SORU: ${currentQ}\n\nCEVAP: ${currentA}`);
+    }
+    
+    return qaPairs;
+  }
+
+  /**
+   * Yapısal chunklama (başlık/bölüm bazlı)
+   */
+  structuralChunking(text, metadata, hrConfig) {
+    const chunks = [];
+    const sections = this.identifySections(text, hrConfig.sectionBoundaries);
+    
+    if (sections.length <= 1) {
+      return []; // Yapısal bölüm bulunamazsa fallback'e git
+    }
+    
+    console.log(`[HR-Chunking] ${sections.length} yapısal bölüm tespit edildi`);
+    
+    for (const [index, section] of sections.entries()) {
+      const sectionChunks = this.recursiveChunking(section.content, {
+        ...metadata,
+        sectionTitle: section.title,
+        sectionIndex: index,
+        type: 'structured_section'
+      }, hrConfig);
+      
+      chunks.push(...sectionChunks);
+    }
+    
+    return chunks;
+  }
+
+  /**
+   * Bölümleri tanımla
+   */
+  identifySections(text, boundaries) {
+    const sections = [];
+    const lines = text.split('\n');
+    
+    let currentSection = { title: '', content: '' };
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      
+      // Başlık tespit et
+      const isHeader = boundaries.some(boundary => 
+        trimmedLine.startsWith(boundary) || 
+        trimmedLine.toUpperCase().includes(boundary)
+      );
+      
+      if (isHeader && currentSection.content) {
+        // Önceki bölümü kaydet
+        sections.push(currentSection);
+        currentSection = { title: trimmedLine, content: '' };
+      } else if (isHeader) {
+        currentSection.title = trimmedLine;
+      } else {
+        currentSection.content += line + '\n';
+      }
+    }
+    
+    // Son bölümü ekle
+    if (currentSection.content.trim()) {
+      sections.push(currentSection);
+    }
+    
+    return sections;
+  }
+
+  /**
+   * Recursive chunklama (LangChain mantığı)
+   */
+  recursiveChunking(text, metadata, hrConfig) {
+    const chunks = [];
+    const maxChunkSize = this.chunkSize;
+    
+    // Önce paragraf bazlı ayır
+    const paragraphs = text.split('\n\n').filter(p => p.trim().length > 0);
+    
+    let currentChunk = '';
+    let currentTokens = 0;
+    
+    for (const paragraph of paragraphs) {
+      const paraTokens = this.getTokenCount(paragraph);
+      
+      if (currentTokens + paraTokens <= maxChunkSize) {
+        currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
+        currentTokens += paraTokens;
+      } else {
+        // Mevcut chunk'ı kaydet
+        if (currentChunk.trim()) {
+          chunks.push(this.createChunk(currentChunk, metadata, chunks.length));
+        }
+        
+        // Yeni chunk başlat (overlap ile)
+        if (paraTokens > maxChunkSize) {
+          // Paragraf çok büyükse sentence bazlı böl
+          const sentenceChunks = this.enhancedSentenceChunking(paragraph, metadata, hrConfig);
+          chunks.push(...sentenceChunks);
+          currentChunk = '';
+          currentTokens = 0;
+        } else {
+          // Overlap ekle
+          const overlapContent = this.getOverlapContent(currentChunk);
+          currentChunk = overlapContent + (overlapContent ? '\n\n' : '') + paragraph;
+          currentTokens = this.getTokenCount(currentChunk);
+        }
+      }
+    }
+    
+    // Son chunk'ı ekle
+    if (currentChunk.trim()) {
+      chunks.push(this.createChunk(currentChunk, metadata, chunks.length));
+    }
+    
+    return chunks;
+  }
+
+  /**
+   * Gelişmiş cümle bazlı chunklama
+   */
+  enhancedSentenceChunking(text, metadata, hrConfig) {
+    // Liste yapılarını koru
+    if (hrConfig.listPreservation) {
+      text = this.preserveListStructures(text, hrConfig.listPatterns);
+    }
+    
+    // Normal sentence chunklama
+    return this.chunkText(text, metadata);
+  }
+
+  /**
+   * Liste yapılarını koru
+   */
+  preserveListStructures(text, listPatterns) {
+    let preservedText = text;
+    
+    // Liste öğelerini bir arada tut
+    for (const pattern of listPatterns) {
+      const regex = new RegExp(`(${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\\n]+(?:\\n(?!\\s*${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})[^\\n]*)*)`, 'g');
+      preservedText = preservedText.replace(regex, (match) => {
+        return match.replace(/\n/g, ' '); // Liste içi satır sonlarını space'e çevir
+      });
+    }
+    
+    return preservedText;
   }
 }
 

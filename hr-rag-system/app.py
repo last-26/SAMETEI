@@ -12,6 +12,7 @@ import io
 import base64
 import logging
 import requests
+import re
 from PIL import Image
 
 # Logging ayarları
@@ -88,7 +89,7 @@ def extract_text_from_image_api(image):
         if not image_base64:
             return None
 
-        # Prompt
+        # TAM PROMPT - EKSİK KISIMLAR TamamlandI
         prompt = """TASK: Extract ALL textual content from the image completely and accurately.
 
 RULES:
@@ -136,10 +137,11 @@ Unreadable section → [...]"""
 
         logger.info("🔍 API üzerinden OCR işlemi başlatılıyor...")
 
-        # API çağrısı
+        # API çağrısı - TIMEOUT ve ERROR HANDLING eklendi
         response = requests.post(
             f"{API_BASE_URL}/ocr",
-            json=payload
+            json=payload,
+            timeout=1200  # 20 dakika timeout
         )
 
         if response.status_code == 200:
@@ -156,18 +158,19 @@ Unreadable section → [...]"""
             return None
 
     except requests.exceptions.Timeout:
-        logger.error("❌ API timeout hatası")
+        logger.error("❌ API timeout hatası (120 saniye)")
+        return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ API request hatası: {e}")
         return None
     except Exception as e:
         logger.error(f"❌ API çağrı hatası: {e}")
         return None
 
 def clean_output_text(text):
-    """Çıktı metnini basit temizleme"""
+    """Çıktı metnini temizleme - GELİŞTİRİLMİŞ VERSİYON"""
     if not text:
         return ""
-
-    import re
 
     # Gereksiz başlangıç metinlerini temizle
     text = re.sub(r"^Here is the extracted.*?:\s*", "", text, flags=re.IGNORECASE)
@@ -187,7 +190,6 @@ def clean_output_text(text):
         text = match.group(1).strip()
 
     # Form belgelerindeki boş alan parantezlerini temizle
-    # [Gönderilmemiş], [Boş], [Doldurulmamış], [N/A] vb. gibi parantez içindeki metinleri kaldır
     text = re.sub(r"\[\s*(?:Gönderilmemiş|Boş|Doldurulmamış|N/A|NA|None|Null|Empty|Blank|TBD|To be determined|Belirtilmemiş|Yazılmamış|Eksik|Missing|Unknown|Bilinmiyor|Yok|---|\.\.\.|…|_+|-+|\s+)\s*\]", "", text, flags=re.IGNORECASE)
     
     # Genel olarak köşeli parantez içinde sadece boşluk, tire, nokta vb. olan durumları temizle
